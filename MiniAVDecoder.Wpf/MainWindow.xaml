@@ -63,7 +63,6 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="96"/>
@@ -71,52 +70,45 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
 
-                            <TextBlock Text="FFmpeg路径" Style="{StaticResource FieldLabelStyle}"/>
+                            <TextBlock Text="推流地址" Style="{StaticResource FieldLabelStyle}"/>
                             <TextBox Grid.Column="1"
-                                     Text="{Binding FfmpegPath, UpdateSourceTrigger=PropertyChanged}"
-                                     Height="32"
-                                     VerticalContentAlignment="Center"
-                                     Margin="0,0,12,8"/>
-                            <Button Grid.Column="2"
-                                    Content="列出设备"
-                                    Width="110"
-                                    Height="32"
-                                    Margin="0,0,0,8"
-                                    Command="{Binding ListLiveDevicesCommand}"/>
-
-                            <TextBlock Grid.Row="1" Text="推流地址" Style="{StaticResource FieldLabelStyle}"/>
-                            <TextBox Grid.Row="1"
-                                     Grid.Column="1"
                                      Grid.ColumnSpan="2"
                                      Text="{Binding RtmpUrl, UpdateSourceTrigger=PropertyChanged}"
                                      Height="32"
                                      VerticalContentAlignment="Center"
                                      Margin="0,0,0,8"/>
 
-                            <TextBlock Grid.Row="2" Text="视频来源" Style="{StaticResource FieldLabelStyle}"/>
-                            <CheckBox Grid.Row="2"
+                            <TextBlock Grid.Row="1" Text="视频来源" Style="{StaticResource FieldLabelStyle}"/>
+                            <CheckBox Grid.Row="1"
                                       Grid.Column="1"
                                       Content="使用摄像头"
                                       IsChecked="{Binding UseCamera}"
                                       VerticalAlignment="Center"
                                       Margin="0,0,12,8"/>
-                            <TextBox Grid.Row="2"
-                                     Grid.Column="2"
-                                     Text="{Binding CameraDeviceName, UpdateSourceTrigger=PropertyChanged}"
-                                     Width="260"
-                                     Height="32"
-                                     VerticalContentAlignment="Center"
-                                     Margin="0,0,0,8"
-                                     ToolTip="摄像头设备名，例如 Integrated Camera"/>
+                            <StackPanel Grid.Row="1"
+                                        Grid.Column="2"
+                                        Orientation="Horizontal"
+                                        Margin="0,0,0,8">
+                                <TextBox Text="{Binding CameraDeviceName, UpdateSourceTrigger=PropertyChanged}"
+                                         Width="260"
+                                         Height="32"
+                                         VerticalContentAlignment="Center"
+                                         Margin="0,0,10,0"
+                                         ToolTip="摄像头设备名，例如 Integrated Camera"/>
+                                <Button Content="列出设备"
+                                        Width="110"
+                                        Height="32"
+                                        Command="{Binding ListLiveDevicesCommand}"/>
+                            </StackPanel>
 
-                            <TextBlock Grid.Row="3" Text="音频来源" Style="{StaticResource FieldLabelStyle}"/>
-                            <CheckBox Grid.Row="3"
+                            <TextBlock Grid.Row="2" Text="音频来源" Style="{StaticResource FieldLabelStyle}"/>
+                            <CheckBox Grid.Row="2"
                                       Grid.Column="1"
                                       Content="推送麦克风声音"
                                       IsChecked="{Binding IncludeAudio}"
                                       VerticalAlignment="Center"
                                       Margin="0,0,12,8"/>
-                            <TextBox Grid.Row="3"
+                            <TextBox Grid.Row="2"
                                      Grid.Column="2"
                                      Text="{Binding AudioDeviceName, UpdateSourceTrigger=PropertyChanged}"
                                      Width="260"
@@ -125,8 +117,8 @@
                                      Margin="0,0,0,8"
                                      ToolTip="麦克风设备名，例如 Microphone Array"/>
 
-                            <TextBlock Grid.Row="4" Text="推流参数" Style="{StaticResource FieldLabelStyle}"/>
-                            <StackPanel Grid.Row="4"
+                            <TextBlock Grid.Row="3" Text="推流参数" Style="{StaticResource FieldLabelStyle}"/>
+                            <StackPanel Grid.Row="3"
                                         Grid.Column="1"
                                         Grid.ColumnSpan="2"
                                         Orientation="Horizontal"
@@ -151,7 +143,7 @@
                                          Margin="0,0,0,8"/>
                             </StackPanel>
 
-                            <StackPanel Grid.Row="5"
+                            <StackPanel Grid.Row="4"
                                         Grid.ColumnSpan="3"
                                         Orientation="Horizontal">
                                 <Button Content="开始直播"

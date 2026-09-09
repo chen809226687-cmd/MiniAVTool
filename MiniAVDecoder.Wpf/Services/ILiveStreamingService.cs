@@ -10,5 +10,5 @@ public interface ILiveStreamingService
 
     Task StartAsync(LiveStreamOptions options, Action<string> onOutput, CancellationToken cancellationToken = default);
     Task StopAsync(CancellationToken cancellationToken = default);
-    Task<string> ListDevicesAsync(string ffmpegPath, CancellationToken cancellationToken = default);
+    Task<string> ListDevicesAsync(CancellationToken cancellationToken = default);
 }

@@ -97,11 +97,11 @@ public sealed class LiveStreamingService : ILiveStreamingService, IDisposable
         process.Dispose();
     }
 
-    public async Task<string> ListDevicesAsync(string ffmpegPath, CancellationToken cancellationToken = default)
+    public async Task<string> ListDevicesAsync(CancellationToken cancellationToken = default)
     {
         var psi = new ProcessStartInfo
         {
-            FileName = NormalizeFfmpegPath(ffmpegPath),
+            FileName = FfmpegLocator.GetRequiredBundledFfmpegPath(),
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -138,7 +138,7 @@ public sealed class LiveStreamingService : ILiveStreamingService, IDisposable
     {
         var psi = new ProcessStartInfo
         {
-            FileName = NormalizeFfmpegPath(options.FfmpegPath),
+            FileName = FfmpegLocator.GetRequiredBundledFfmpegPath(),
             UseShellExecute = false,
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
@@ -255,11 +255,6 @@ public sealed class LiveStreamingService : ILiveStreamingService, IDisposable
         }
 
         return input;
-    }
-
-    private static string NormalizeFfmpegPath(string ffmpegPath)
-    {
-        return string.IsNullOrWhiteSpace(ffmpegPath) ? "ffmpeg" : ffmpegPath.Trim();
     }
 
     private static void WriteOutput(string? line, Action<string> onOutput)

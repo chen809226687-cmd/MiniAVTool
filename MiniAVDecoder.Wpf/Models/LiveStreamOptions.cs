@@ -2,7 +2,6 @@ namespace MiniAVDecoder.Wpf.Models;
 
 public sealed class LiveStreamOptions
 {
-    public string FfmpegPath { get; init; } = "ffmpeg";
     public string RtmpUrl { get; init; } = string.Empty;
     public bool UseCamera { get; init; }
     public string CameraDeviceName { get; init; } = string.Empty;

@@ -34,7 +34,6 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     private int _frameCount = 30;
     private bool _isBusy;
   
-    private string _ffmpegPath = "E:\\DecoderAbout\\ffmpeg-9.0.1-essentials_build\\bin\\ffmpeg.exe";
     private string _rtmpUrl = "rtmp://111.229.145.58/live/test";
     private bool _useCamera;
     private string _cameraDeviceName = string.Empty;
@@ -110,6 +109,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
 
         AppendLog("媒体工具已就绪。");
         AppendLiveLog("直播工具已就绪，请先确认服务器上的 SRS 或 RTMP 服务已启动。");
+        AppendLiveLog("程序将使用项目自带的 FFmpeg：Tools\\ffmpeg\\ffmpeg.exe。");
         AppendPlaybackLog("观看直播功能已就绪。");
         OutputPath = _outputPath;
     }
@@ -162,18 +162,6 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         private set
         {
             if (SetProperty(ref _isBusy, value))
-            {
-                RaiseCommandStates();
-            }
-        }
-    }
-
-    public string FfmpegPath
-    {
-        get => _ffmpegPath;
-        set
-        {
-            if (SetProperty(ref _ffmpegPath, value))
             {
                 RaiseCommandStates();
             }
@@ -469,7 +457,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         try
         {
             LiveStatusText = "正在读取 DirectShow 设备...";
-            var output = await _liveStreamingService.ListDevicesAsync(FfmpegPath);
+            var output = await _liveStreamingService.ListDevicesAsync();
             AppendLiveSection("FFmpeg DirectShow 设备列表", output.TrimEnd());
             LiveStatusText = "设备列表已读取";
         }
@@ -581,7 +569,6 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     {
         return new LiveStreamOptions
         {
-            FfmpegPath = FfmpegPath,
             RtmpUrl = RtmpUrl,
             UseCamera = UseCamera,
             CameraDeviceName = CameraDeviceName,
