@@ -10,8 +10,8 @@ public sealed class DialogService : IDialogService
     {
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
-            Filter = "Media files|*.mp4;*.mkv;*.avi;*.mov;*.wmv;*.flv;*.ts;*.m4v|All files|*.*",
-            Title = "Select video file"
+            Filter = "媒体文件|*.mp4;*.mkv;*.avi;*.mov;*.wmv;*.flv;*.ts;*.m4v|所有文件|*.*",
+            Title = "选择视频文件"
         };
 
         return dialog.ShowDialog() == true ? dialog.FileName : null;
@@ -21,7 +21,7 @@ public sealed class DialogService : IDialogService
     {
         using var dialog = new Forms.FolderBrowserDialog
         {
-            Description = "Select output folder",
+            Description = "选择输出目录",
             UseDescriptionForTitle = true,
             SelectedPath = Directory.Exists(initialPath) ? initialPath : Environment.GetFolderPath(Environment.SpecialFolder.Desktop)
         };

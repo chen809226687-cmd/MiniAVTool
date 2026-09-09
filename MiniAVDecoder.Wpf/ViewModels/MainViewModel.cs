@@ -1,7 +1,8 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using MiniAVDecoder.Wpf.Infrastructure;
@@ -10,10 +11,12 @@ using MiniAVDecoder.Wpf.Services;
 
 namespace MiniAVDecoder.Wpf.ViewModels;
 
-public sealed class MainViewModel : ViewModelBase
+public sealed class MainViewModel : ViewModelBase, IDisposable
 {
     private readonly IBackendService _backendService;
     private readonly IDialogService _dialogService;
+    private readonly ILiveStreamingService _liveStreamingService;
+    private readonly ILivePlaybackService _livePlaybackService;
     private readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -21,12 +24,32 @@ public sealed class MainViewModel : ViewModelBase
     };
 
     private readonly StringBuilder _logBuilder = new();
+    private readonly StringBuilder _liveLogBuilder = new();
+    private readonly StringBuilder _playbackLogBuilder = new();
+
     private string _inputPath = string.Empty;
     private string _outputPath = string.Empty;
-    private string _statusText = "Ready";
+    private string _statusText = "就绪";
     private string _logText = string.Empty;
     private int _frameCount = 30;
     private bool _isBusy;
+  
+    private string _ffmpegPath = "E:\\DecoderAbout\\ffmpeg-9.0.1-essentials_build\\bin\\ffmpeg.exe";
+    private string _rtmpUrl = "rtmp://111.229.145.58/live/test";
+    private bool _useCamera;
+    private string _cameraDeviceName = string.Empty;
+    private bool _includeAudio;
+    private string _audioDeviceName = string.Empty;
+    private int _liveFrameRate = 30;
+    private string _liveVideoSize = "1280x720";
+    private int _liveVideoBitrateKbps = 2500;
+    private string _liveStatusText = "直播未开始";
+    private string _liveLogText = string.Empty;
+    private bool _isLiveStreaming;
+    private string _playbackUrl = "rtmp://111.229.145.58/live/test";
+    private string _playbackStatusText = "未播放";
+    private string _playbackLogText = string.Empty;
+    private bool _isPlaybackActive;
 
     private readonly RelayCommand _chooseVideoCommand;
     private readonly RelayCommand _chooseOutputCommand;
@@ -35,16 +58,39 @@ public sealed class MainViewModel : ViewModelBase
     private readonly AsyncRelayCommand _extractFramesCommand;
     private readonly AsyncRelayCommand _extractAudioCommand;
     private readonly AsyncRelayCommand _runAllCommand;
+    private readonly AsyncRelayCommand _startLiveCommand;
+    private readonly AsyncRelayCommand _stopLiveCommand;
+    private readonly AsyncRelayCommand _listLiveDevicesCommand;
+    private readonly AsyncRelayCommand _startPlaybackCommand;
+    private readonly AsyncRelayCommand _stopPlaybackCommand;
 
     public MainViewModel()
-        : this(new BackendService(), new DialogService())
+        : this(
+            new BackendService(),
+            new DialogService(),
+            new LiveStreamingService(),
+            new LibVlcPlaybackService())
     {
     }
 
-    public MainViewModel(IBackendService backendService, IDialogService dialogService)
+    public MainViewModel(IBackendService backendService, IDialogService dialogService, ILiveStreamingService liveStreamingService)
+        : this(backendService, dialogService, liveStreamingService, new LibVlcPlaybackService())
+    {
+    }
+
+    public MainViewModel(
+        IBackendService backendService,
+        IDialogService dialogService,
+        ILiveStreamingService liveStreamingService,
+        ILivePlaybackService livePlaybackService)
     {
         _backendService = backendService;
         _dialogService = dialogService;
+        _liveStreamingService = liveStreamingService;
+        _livePlaybackService = livePlaybackService;
+        _liveStreamingService.StreamExited += OnLiveStreamExited;
+        _livePlaybackService.StatusChanged += OnPlaybackStatusChanged;
+        _livePlaybackService.LogReceived += OnPlaybackLogReceived;
 
         _outputPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "MiniAVDecoderOutput");
         FramePreviews = new ObservableCollection<ImageSource>();
@@ -56,8 +102,15 @@ public sealed class MainViewModel : ViewModelBase
         _extractFramesCommand = new AsyncRelayCommand(() => ExecuteBackendAsync("extract-frames", refreshFrames: true), CanRunBackend);
         _extractAudioCommand = new AsyncRelayCommand(() => ExecuteBackendAsync("extract-audio", refreshFrames: false), CanRunBackend);
         _runAllCommand = new AsyncRelayCommand(() => ExecuteBackendAsync("all", refreshFrames: true), CanRunBackend);
+        _startLiveCommand = new AsyncRelayCommand(StartLiveAsync, CanStartLive);
+        _stopLiveCommand = new AsyncRelayCommand(StopLiveAsync, CanStopLive);
+        _listLiveDevicesCommand = new AsyncRelayCommand(ListLiveDevicesAsync, CanListLiveDevices);
+        _startPlaybackCommand = new AsyncRelayCommand(StartPlaybackAsync, CanStartPlayback);
+        _stopPlaybackCommand = new AsyncRelayCommand(StopPlaybackAsync, CanStopPlayback);
 
-        AppendLog("Tool is ready.");
+        AppendLog("媒体工具已就绪。");
+        AppendLiveLog("直播工具已就绪，请先确认服务器上的 SRS 或 RTMP 服务已启动。");
+        AppendPlaybackLog("观看直播功能已就绪。");
         OutputPath = _outputPath;
     }
 
@@ -115,6 +168,156 @@ public sealed class MainViewModel : ViewModelBase
         }
     }
 
+    public string FfmpegPath
+    {
+        get => _ffmpegPath;
+        set
+        {
+            if (SetProperty(ref _ffmpegPath, value))
+            {
+                RaiseCommandStates();
+            }
+        }
+    }
+
+    public string RtmpUrl
+    {
+        get => _rtmpUrl;
+        set
+        {
+            if (SetProperty(ref _rtmpUrl, value))
+            {
+                RaiseCommandStates();
+            }
+        }
+    }
+
+    public bool UseCamera
+    {
+        get => _useCamera;
+        set
+        {
+            if (SetProperty(ref _useCamera, value))
+            {
+                RaiseCommandStates();
+            }
+        }
+    }
+
+    public string CameraDeviceName
+    {
+        get => _cameraDeviceName;
+        set
+        {
+            if (SetProperty(ref _cameraDeviceName, value))
+            {
+                RaiseCommandStates();
+            }
+        }
+    }
+
+    public bool IncludeAudio
+    {
+        get => _includeAudio;
+        set
+        {
+            if (SetProperty(ref _includeAudio, value))
+            {
+                RaiseCommandStates();
+            }
+        }
+    }
+
+    public string AudioDeviceName
+    {
+        get => _audioDeviceName;
+        set
+        {
+            if (SetProperty(ref _audioDeviceName, value))
+            {
+                RaiseCommandStates();
+            }
+        }
+    }
+
+    public int LiveFrameRate
+    {
+        get => _liveFrameRate;
+        set => SetProperty(ref _liveFrameRate, value);
+    }
+
+    public string LiveVideoSize
+    {
+        get => _liveVideoSize;
+        set => SetProperty(ref _liveVideoSize, value);
+    }
+
+    public int LiveVideoBitrateKbps
+    {
+        get => _liveVideoBitrateKbps;
+        set => SetProperty(ref _liveVideoBitrateKbps, value);
+    }
+
+    public string LiveStatusText
+    {
+        get => _liveStatusText;
+        private set => SetProperty(ref _liveStatusText, value);
+    }
+
+    public string LiveLogText
+    {
+        get => _liveLogText;
+        private set => SetProperty(ref _liveLogText, value);
+    }
+
+    public bool IsLiveStreaming
+    {
+        get => _isLiveStreaming;
+        private set
+        {
+            if (SetProperty(ref _isLiveStreaming, value))
+            {
+                RaiseCommandStates();
+            }
+        }
+    }
+
+    public string PlaybackUrl
+    {
+        get => _playbackUrl;
+        set
+        {
+            if (SetProperty(ref _playbackUrl, value))
+            {
+                RaiseCommandStates();
+            }
+        }
+    }
+
+    public string PlaybackStatusText
+    {
+        get => _playbackStatusText;
+        private set => SetProperty(ref _playbackStatusText, value);
+    }
+
+    public string PlaybackLogText
+    {
+        get => _playbackLogText;
+        private set => SetProperty(ref _playbackLogText, value);
+    }
+
+    public bool IsPlaybackActive
+    {
+        get => _isPlaybackActive;
+        private set
+        {
+            if (SetProperty(ref _isPlaybackActive, value))
+            {
+                RaiseCommandStates();
+            }
+        }
+    }
+
     public ObservableCollection<ImageSource> FramePreviews { get; }
 
     public RelayCommand ChooseVideoCommand => _chooseVideoCommand;
@@ -124,6 +327,20 @@ public sealed class MainViewModel : ViewModelBase
     public AsyncRelayCommand ExtractFramesCommand => _extractFramesCommand;
     public AsyncRelayCommand ExtractAudioCommand => _extractAudioCommand;
     public AsyncRelayCommand RunAllCommand => _runAllCommand;
+    public AsyncRelayCommand StartLiveCommand => _startLiveCommand;
+    public AsyncRelayCommand StopLiveCommand => _stopLiveCommand;
+    public AsyncRelayCommand ListLiveDevicesCommand => _listLiveDevicesCommand;
+    public AsyncRelayCommand StartPlaybackCommand => _startPlaybackCommand;
+    public AsyncRelayCommand StopPlaybackCommand => _stopPlaybackCommand;
+
+    public void Dispose()
+    {
+        _liveStreamingService.StreamExited -= OnLiveStreamExited;
+        _livePlaybackService.StatusChanged -= OnPlaybackStatusChanged;
+        _livePlaybackService.LogReceived -= OnPlaybackLogReceived;
+        _ = _liveStreamingService.StopAsync();
+        _livePlaybackService.Dispose();
+    }
 
     private void ChooseVideo()
     {
@@ -134,7 +351,7 @@ public sealed class MainViewModel : ViewModelBase
         }
 
         InputPath = file;
-        AppendLog($"Selected file: {file}");
+        AppendLog($"已选择视频：{file}");
     }
 
     private void ChooseOutput()
@@ -146,7 +363,7 @@ public sealed class MainViewModel : ViewModelBase
         }
 
         OutputPath = folder;
-        AppendLog($"Output folder: {folder}");
+        AppendLog($"输出目录：{folder}");
     }
 
     private void OpenOutput()
@@ -162,7 +379,12 @@ public sealed class MainViewModel : ViewModelBase
 
     private bool CanUseDialogs() => !IsBusy;
     private bool CanOpenOutput() => !IsBusy && !string.IsNullOrWhiteSpace(OutputPath);
-    private bool CanRunBackend() => !IsBusy && File.Exists(InputPath);
+    private bool CanRunBackend() => !IsBusy && !IsLiveStreaming && File.Exists(InputPath);
+    private bool CanStartLive() => !IsLiveStreaming && !string.IsNullOrWhiteSpace(RtmpUrl) && (!UseCamera || !string.IsNullOrWhiteSpace(CameraDeviceName));
+    private bool CanStopLive() => IsLiveStreaming;
+    private bool CanListLiveDevices() => !IsLiveStreaming;
+    private bool CanStartPlayback() => !IsPlaybackActive && IsSupportedPlaybackUrl(PlaybackUrl);
+    private bool CanStopPlayback() => IsPlaybackActive;
 
     private async Task ExecuteBackendAsync(string command, bool refreshFrames)
     {
@@ -179,12 +401,12 @@ public sealed class MainViewModel : ViewModelBase
 
             if (!result.Success)
             {
-                StatusText = $"Backend exit code: {result.ExitCode}";
-                AppendLog($"Backend failed: {result.ExecutablePath}");
+                StatusText = $"后端退出码：{result.ExitCode}";
+                AppendLog($"后端执行失败：{result.ExecutablePath}");
                 return;
             }
 
-            StatusText = $"Completed: {command}";
+            StatusText = $"执行完成：{GetCommandDisplayName(command)}";
             await LoadMediaInfoAsync();
 
             if (refreshFrames)
@@ -194,7 +416,7 @@ public sealed class MainViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            StatusText = "Execution failed";
+            StatusText = "执行失败";
             AppendLog(ex.Message);
         }
         finally
@@ -203,11 +425,104 @@ public sealed class MainViewModel : ViewModelBase
         }
     }
 
+    private async Task StartLiveAsync()
+    {
+        if (!ValidateLiveSettings())
+        {
+            return;
+        }
+
+        try
+        {
+            IsLiveStreaming = true;
+            LiveStatusText = "正在启动直播...";
+            await _liveStreamingService.StartAsync(BuildLiveOptions(), AppendLiveLogThreadSafe);
+            LiveStatusText = "直播中";
+        }
+        catch (Exception ex)
+        {
+            IsLiveStreaming = false;
+            LiveStatusText = "直播启动失败";
+            AppendLiveLog(ex.Message);
+        }
+    }
+
+    private async Task StopLiveAsync()
+    {
+        try
+        {
+            LiveStatusText = "正在停止直播...";
+            await _liveStreamingService.StopAsync();
+            IsLiveStreaming = false;
+            LiveStatusText = "直播已停止";
+            AppendLiveLog("直播已停止。");
+        }
+        catch (Exception ex)
+        {
+            LiveStatusText = "停止失败";
+            AppendLiveLog(ex.Message);
+        }
+    }
+
+    private async Task ListLiveDevicesAsync()
+    {
+        try
+        {
+            LiveStatusText = "正在读取 DirectShow 设备...";
+            var output = await _liveStreamingService.ListDevicesAsync(FfmpegPath);
+            AppendLiveSection("FFmpeg DirectShow 设备列表", output.TrimEnd());
+            LiveStatusText = "设备列表已读取";
+        }
+        catch (Exception ex)
+        {
+            LiveStatusText = "读取设备失败";
+            AppendLiveLog(ex.Message);
+        }
+    }
+
+    private async Task StartPlaybackAsync()
+    {
+        if (!ValidatePlaybackSettings())
+        {
+            return;
+        }
+
+        try
+        {
+            IsPlaybackActive = true;
+            PlaybackStatusText = "正在连接...";
+            await _livePlaybackService.PlayAsync(PlaybackUrl);
+        }
+        catch (Exception ex)
+        {
+            IsPlaybackActive = false;
+            PlaybackStatusText = "播放启动失败";
+            AppendPlaybackLog(ex.Message);
+        }
+    }
+
+    private async Task StopPlaybackAsync()
+    {
+        try
+        {
+            PlaybackStatusText = "正在停止...";
+            await _livePlaybackService.StopAsync();
+            IsPlaybackActive = false;
+            PlaybackStatusText = "已停止";
+            AppendPlaybackLog("已停止播放。");
+        }
+        catch (Exception ex)
+        {
+            PlaybackStatusText = "停止失败";
+            AppendPlaybackLog(ex.Message);
+        }
+    }
+
     private bool ValidateInputs()
     {
         if (string.IsNullOrWhiteSpace(InputPath) || !File.Exists(InputPath))
         {
-            AppendLog("Please select a valid video file first.");
+            AppendLog("请先选择一个有效的视频文件。");
             return false;
         }
 
@@ -218,6 +533,76 @@ public sealed class MainViewModel : ViewModelBase
 
         Directory.CreateDirectory(OutputPath);
         return true;
+    }
+
+    private bool ValidateLiveSettings()
+    {
+        if (string.IsNullOrWhiteSpace(RtmpUrl) || !RtmpUrl.Trim().StartsWith("rtmp://", StringComparison.OrdinalIgnoreCase))
+        {
+            AppendLiveLog("请输入 RTMP 推流地址，例如 rtmp://127.0.0.1/live/test。");
+            return false;
+        }
+
+        if (UseCamera && string.IsNullOrWhiteSpace(CameraDeviceName))
+        {
+            AppendLiveLog("摄像头模式需要填写 DirectShow 视频设备名，请先点击“列出设备”。");
+            return false;
+        }
+
+        if (IncludeAudio && string.IsNullOrWhiteSpace(AudioDeviceName))
+        {
+            AppendLiveLog("已勾选音频但未填写麦克风设备名，将只推送视频。");
+            IncludeAudio = false;
+        }
+
+        return true;
+    }
+
+    private bool ValidatePlaybackSettings()
+    {
+        if (!IsSupportedPlaybackUrl(PlaybackUrl))
+        {
+            AppendPlaybackLog("请输入有效的直播地址，例如 rtmp://111.229.145.58/live/test。");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsSupportedPlaybackUrl(string? url)
+    {
+        return Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var uri)
+            && (uri.Scheme.Equals("rtmp", StringComparison.OrdinalIgnoreCase)
+                || uri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase)
+                || uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private LiveStreamOptions BuildLiveOptions()
+    {
+        return new LiveStreamOptions
+        {
+            FfmpegPath = FfmpegPath,
+            RtmpUrl = RtmpUrl,
+            UseCamera = UseCamera,
+            CameraDeviceName = CameraDeviceName,
+            IncludeAudio = IncludeAudio,
+            AudioDeviceName = AudioDeviceName,
+            FrameRate = LiveFrameRate,
+            VideoSize = LiveVideoSize,
+            VideoBitrateKbps = LiveVideoBitrateKbps
+        };
+    }
+
+    private static string GetCommandDisplayName(string command)
+    {
+        return command switch
+        {
+            "analyze" => "分析",
+            "extract-frames" => "抽取帧",
+            "extract-audio" => "提取音频",
+            "all" => "全部执行",
+            _ => command
+        };
     }
 
     private async Task LoadMediaInfoAsync()
@@ -237,11 +622,11 @@ public sealed class MainViewModel : ViewModelBase
                 return;
             }
 
-            AppendSection("Media info", MediaReportBuilder.Build(info, json));
+            AppendSection("媒体信息", MediaReportBuilder.Build(info, json));
         }
         catch (Exception ex)
         {
-            AppendLog($"Failed to read media_info.json: {ex.Message}");
+            AppendLog($"读取 media_info.json 失败：{ex.Message}");
         }
     }
 
@@ -282,12 +667,12 @@ public sealed class MainViewModel : ViewModelBase
     {
         if (!string.IsNullOrWhiteSpace(result.StandardOutput))
         {
-            AppendSection("stdout", result.StandardOutput.TrimEnd());
+            AppendSection("标准输出", result.StandardOutput.TrimEnd());
         }
 
         if (!string.IsNullOrWhiteSpace(result.StandardError))
         {
-            AppendSection("stderr", result.StandardError.TrimEnd());
+            AppendSection("错误输出", result.StandardError.TrimEnd());
         }
     }
 
@@ -315,6 +700,87 @@ public sealed class MainViewModel : ViewModelBase
         LogText = _logBuilder.ToString();
     }
 
+    private void AppendLiveSection(string title, string content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return;
+        }
+
+        _liveLogBuilder.AppendLine();
+        _liveLogBuilder.AppendLine($"=== {title} ===");
+        _liveLogBuilder.AppendLine(content);
+        LiveLogText = _liveLogBuilder.ToString();
+    }
+
+    private void AppendLiveLog(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return;
+        }
+
+        _liveLogBuilder.AppendLine($"[{DateTime.Now:HH:mm:ss}] {message.TrimEnd()}");
+        LiveLogText = _liveLogBuilder.ToString();
+    }
+
+    private void AppendLiveLogThreadSafe(string message)
+    {
+        RunOnUiThread(() => AppendLiveLog(message));
+    }
+
+    private void OnPlaybackStatusChanged(object? sender, LivePlaybackStatusChangedEventArgs e)
+    {
+        RunOnUiThread(() =>
+        {
+            PlaybackStatusText = e.Message;
+            AppendPlaybackLog(e.Message);
+
+            if (e.State is LivePlaybackState.Stopped or LivePlaybackState.Error)
+            {
+                IsPlaybackActive = false;
+            }
+        });
+    }
+
+    private void OnPlaybackLogReceived(object? sender, string message)
+    {
+        RunOnUiThread(() => AppendPlaybackLog(message));
+    }
+
+    private void AppendPlaybackLog(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return;
+        }
+
+        _playbackLogBuilder.AppendLine($"[{DateTime.Now:HH:mm:ss}] {message.TrimEnd()}");
+        PlaybackLogText = _playbackLogBuilder.ToString();
+    }
+
+    private void OnLiveStreamExited(object? sender, int exitCode)
+    {
+        RunOnUiThread(() =>
+        {
+            IsLiveStreaming = false;
+            LiveStatusText = exitCode == 0 ? "直播已停止" : $"FFmpeg 已退出：{exitCode}";
+            AppendLiveLog($"FFmpeg 进程退出，退出码：{exitCode}。");
+        });
+    }
+
+    private static void RunOnUiThread(Action action)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher != null && !dispatcher.CheckAccess())
+        {
+            dispatcher.BeginInvoke(action);
+            return;
+        }
+
+        action();
+    }
+
     private void RaiseCommandStates()
     {
         _chooseVideoCommand.RaiseCanExecuteChanged();
@@ -324,5 +790,10 @@ public sealed class MainViewModel : ViewModelBase
         _extractFramesCommand.RaiseCanExecuteChanged();
         _extractAudioCommand.RaiseCanExecuteChanged();
         _runAllCommand.RaiseCanExecuteChanged();
+        _startLiveCommand.RaiseCanExecuteChanged();
+        _stopLiveCommand.RaiseCanExecuteChanged();
+        _listLiveDevicesCommand.RaiseCanExecuteChanged();
+        _startPlaybackCommand.RaiseCanExecuteChanged();
+        _stopPlaybackCommand.RaiseCanExecuteChanged();
     }
 }

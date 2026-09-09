@@ -38,7 +38,7 @@ public sealed class BackendService : IBackendService
         using var process = new Process { StartInfo = psi };
         if (!process.Start())
         {
-            throw new InvalidOperationException("Failed to start backend process.");
+            throw new InvalidOperationException("启动后端进程失败。");
         }
 
         var stdoutTask = process.StandardOutput.ReadToEndAsync();
