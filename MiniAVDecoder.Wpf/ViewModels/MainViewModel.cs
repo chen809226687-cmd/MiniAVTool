@@ -42,6 +42,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     private int _liveFrameRate = 30;
     private string _liveVideoSize = "1280x720";
     private int _liveVideoBitrateKbps = 2500;
+    private string _liveScaleMode = "原始比例";
     private string _liveStatusText = "直播未开始";
     private string _liveLogText = string.Empty;
     private bool _isLiveStreaming;
@@ -234,6 +235,38 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         set => SetProperty(ref _liveFrameRate, value);
     }
 
+    public IReadOnlyList<string> LiveVideoSizeOptions { get; } =
+    [
+        "640x360",
+        "854x480",
+        "1280x720",
+        "1920x1080",
+        "2560x1440"
+    ];
+
+    public IReadOnlyList<int> LiveFrameRateOptions { get; } =
+    [
+        15,
+        24,
+        30,
+        60
+    ];
+
+    public IReadOnlyList<int> LiveVideoBitrateOptions { get; } =
+    [
+        800,
+        1500,
+        2500,
+        4500,
+        6000
+    ];
+
+    public IReadOnlyList<string> LiveScaleModeOptions { get; } =
+    [
+        "原始比例",
+        "自动缩放"
+    ];
+
     public string LiveVideoSize
     {
         get => _liveVideoSize;
@@ -244,6 +277,12 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     {
         get => _liveVideoBitrateKbps;
         set => SetProperty(ref _liveVideoBitrateKbps, value);
+    }
+
+    public string LiveScaleMode
+    {
+        get => _liveScaleMode;
+        set => SetProperty(ref _liveScaleMode, value);
     }
 
     public string LiveStatusText

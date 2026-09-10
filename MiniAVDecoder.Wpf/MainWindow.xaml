@@ -9,7 +9,8 @@
         Height="760"
         Width="1180"
         MinHeight="680"
-        MinWidth="1040">
+        MinWidth="1040"
+        PreviewKeyDown="OnWindowPreviewKeyDown">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
 
@@ -32,21 +33,31 @@
             <Setter Property="Height" Value="34"/>
             <Setter Property="Margin" Value="0,0,10,0"/>
         </Style>
+
+        <Style x:Key="LiveVideoViewBoxStyle" TargetType="Viewbox">
+            <Setter Property="Stretch" Value="Uniform"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding LiveScaleMode}" Value="自动缩放">
+                    <Setter Property="Stretch" Value="UniformToFill"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </Window.Resources>
 
-    <Grid Background="#F5F7FA" Margin="18">
+    <Grid x:Name="MainRoot" Background="#F5F7FA" Margin="18">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
+            <RowDefinition x:Name="TitleRow" Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Text="MiniAV 直播与媒体工具"
+        <TextBlock x:Name="AppTitleText"
+                   Text="MiniAV 直播与媒体工具"
                    FontSize="24"
                    FontWeight="SemiBold"
                    Foreground="#18202F"
                    Margin="0,0,0,14"/>
 
-        <TabControl Grid.Row="1">
+        <TabControl x:Name="MainTabControl" Grid.Row="1">
             <TabItem Header="直播推流">
                 <Grid Background="#F5F7FA" Margin="0,14,0,0">
                     <Grid.RowDefinitions>
@@ -124,23 +135,23 @@
                                         Orientation="Horizontal"
                                         Margin="0,0,0,10">
                                 <TextBlock Text="分辨率" Style="{StaticResource FieldLabelStyle}"/>
-                                <TextBox Width="100"
-                                         Height="32"
-                                         Text="{Binding LiveVideoSize, UpdateSourceTrigger=PropertyChanged}"
-                                         VerticalContentAlignment="Center"
-                                         Margin="0,0,18,8"/>
+                                <ComboBox Width="110"
+                                          Height="32"
+                                          ItemsSource="{Binding LiveVideoSizeOptions}"
+                                          SelectedItem="{Binding LiveVideoSize, UpdateSourceTrigger=PropertyChanged}"
+                                          Margin="0,0,18,8"/>
                                 <TextBlock Text="帧率" Style="{StaticResource FieldLabelStyle}"/>
-                                <TextBox Width="70"
-                                         Height="32"
-                                         Text="{Binding LiveFrameRate, UpdateSourceTrigger=LostFocus}"
-                                         VerticalContentAlignment="Center"
-                                         Margin="0,0,18,8"/>
+                                <ComboBox Width="75"
+                                          Height="32"
+                                          ItemsSource="{Binding LiveFrameRateOptions}"
+                                          SelectedItem="{Binding LiveFrameRate, UpdateSourceTrigger=PropertyChanged}"
+                                          Margin="0,0,18,8"/>
                                 <TextBlock Text="码率kbps" Style="{StaticResource FieldLabelStyle}"/>
-                                <TextBox Width="90"
-                                         Height="32"
-                                         Text="{Binding LiveVideoBitrateKbps, UpdateSourceTrigger=LostFocus}"
-                                         VerticalContentAlignment="Center"
-                                         Margin="0,0,0,8"/>
+                                <ComboBox Width="95"
+                                          Height="32"
+                                          ItemsSource="{Binding LiveVideoBitrateOptions}"
+                                          SelectedItem="{Binding LiveVideoBitrateKbps, UpdateSourceTrigger=PropertyChanged}"
+                                          Margin="0,0,0,8"/>
                             </StackPanel>
 
                             <StackPanel Grid.Row="4"
@@ -192,15 +203,15 @@
             </TabItem>
 
             <TabItem Header="观看直播">
-                <Grid Background="#F5F7FA" Margin="0,14,0,0">
+                <Grid x:Name="PlaybackPageGrid" Background="#F5F7FA" Margin="0,14,0,0">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="14"/>
+                        <RowDefinition x:Name="PlaybackControlRow" Height="Auto"/>
+                        <RowDefinition x:Name="PlaybackSpacerRow" Height="14"/>
                         <RowDefinition Height="*"/>
-                        <RowDefinition Height="150"/>
+                        <RowDefinition x:Name="PlaybackLogRow" Height="150"/>
                     </Grid.RowDefinitions>
 
-                    <Border Style="{StaticResource PanelBorderStyle}">
+                    <Border x:Name="PlaybackControlPanel" Style="{StaticResource PanelBorderStyle}">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="96"/>
@@ -221,6 +232,18 @@
                                 <Button Content="停止播放"
                                         Style="{StaticResource PrimaryButtonStyle}"
                                         Command="{Binding StopPlaybackCommand}"/>
+                                <TextBlock Text="画面比例"
+                                           Style="{StaticResource FieldLabelStyle}"
+                                           Margin="4,0,8,0"/>
+                                <ComboBox Width="110"
+                                          Height="32"
+                                          ItemsSource="{Binding LiveScaleModeOptions}"
+                                          SelectedItem="{Binding LiveScaleMode, UpdateSourceTrigger=PropertyChanged}"
+                                          VerticalContentAlignment="Center"
+                                          Margin="0,0,10,0"/>
+                                <Button Content="全屏"
+                                        Style="{StaticResource PrimaryButtonStyle}"
+                                        Click="OnToggleFullscreenButtonClick"/>
                                 <TextBlock Text="{Binding PlaybackStatusText}"
                                            Foreground="#667085"
                                            VerticalAlignment="Center"
@@ -229,17 +252,25 @@
                         </Grid>
                     </Border>
 
-                    <Border Grid.Row="2"
+                    <Border x:Name="PlaybackVideoBorder"
+                            Grid.Row="2"
                             Background="#101216"
                             BorderBrush="#D9DEE7"
                             BorderThickness="1"
-                            CornerRadius="6">
-                        <vlc:VideoView x:Name="LiveVideoView"
-                                       HorizontalAlignment="Stretch"
-                                       VerticalAlignment="Stretch"/>
+                            CornerRadius="6"
+                            MouseDown="OnPlaybackVideoMouseDown">
+                        <Viewbox Style="{StaticResource LiveVideoViewBoxStyle}"
+                                 HorizontalAlignment="Stretch"
+                                 VerticalAlignment="Stretch"
+                                 StretchDirection="Both">
+                            <vlc:VideoView x:Name="LiveVideoView"
+                                           Width="1280"
+                                           Height="720"/>
+                        </Viewbox>
                     </Border>
 
-                    <Border Grid.Row="3"
+                    <Border x:Name="PlaybackLogPanel"
+                            Grid.Row="3"
                             Style="{StaticResource PanelBorderStyle}"
                             Margin="0,14,0,0"
                             Padding="12">

@@ -175,12 +175,6 @@ public sealed class LiveStreamingService : ILiveStreamingService, IDisposable
             yield return "dshow";
             yield return "-framerate";
             yield return frameRate.ToString();
-            if (!string.IsNullOrWhiteSpace(options.VideoSize))
-            {
-                yield return "-video_size";
-                yield return options.VideoSize.Trim();
-            }
-
             yield return "-i";
             yield return BuildDirectShowInput(options);
         }
@@ -192,12 +186,6 @@ public sealed class LiveStreamingService : ILiveStreamingService, IDisposable
             yield return frameRate.ToString();
             yield return "-draw_mouse";
             yield return "1";
-            if (!string.IsNullOrWhiteSpace(options.VideoSize))
-            {
-                yield return "-video_size";
-                yield return options.VideoSize.Trim();
-            }
-
             yield return "-i";
             yield return "desktop";
 
@@ -210,6 +198,12 @@ public sealed class LiveStreamingService : ILiveStreamingService, IDisposable
             }
         }
 
+        // 分辨率是推流输出尺寸，而不是桌面或摄像头的采集尺寸。
+        // 通过等比缩放和补黑边避免不同屏幕比例下画面变形。
+        var outputSize = ParseVideoSize(options.VideoSize);
+        yield return "-vf";
+        yield return $"scale={outputSize.Width}:{outputSize.Height}:force_original_aspect_ratio=decrease," +
+                     $"pad={outputSize.Width}:{outputSize.Height}:(ow-iw)/2:(oh-ih)/2:color=black";
         yield return "-c:v";
         yield return "libx264";
         yield return "-preset";
@@ -244,6 +238,26 @@ public sealed class LiveStreamingService : ILiveStreamingService, IDisposable
         yield return "-f";
         yield return "flv";
         yield return options.RtmpUrl.Trim();
+    }
+
+    private static (int Width, int Height) ParseVideoSize(string? videoSize)
+    {
+        if (!string.IsNullOrWhiteSpace(videoSize))
+        {
+            var parts = videoSize.Trim().ToLowerInvariant().Split('x', 2);
+            if (parts.Length == 2
+                && int.TryParse(parts[0], out var width)
+                && int.TryParse(parts[1], out var height)
+                && width >= 320
+                && height >= 180
+                && width <= 2560
+                && height <= 1440)
+            {
+                return (width, height);
+            }
+        }
+
+        return (1280, 720);
     }
 
     private static string BuildDirectShowInput(LiveStreamOptions options)
