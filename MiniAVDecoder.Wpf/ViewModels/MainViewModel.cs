@@ -35,7 +35,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     private bool _isBusy;
   
     private string _rtmpUrl = "rtmp://111.229.145.58/live/test";
-    private bool _useCamera;
+    private LiveVideoSourceMode _videoSourceMode = LiveVideoSourceMode.SharedVideo;
     private string _cameraDeviceName = string.Empty;
     private bool _includeAudio;
     private string _audioDeviceName = string.Empty;
@@ -94,6 +94,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
 
         _outputPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "MiniAVDecoderOutput");
         FramePreviews = new ObservableCollection<ImageSource>();
+        CameraDevices = new ObservableCollection<string>();
 
         _chooseVideoCommand = new RelayCommand(ChooseVideo, CanUseDialogs);
         _chooseOutputCommand = new RelayCommand(ChooseOutput, CanUseDialogs);
@@ -181,14 +182,40 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         }
     }
 
-    public bool UseCamera
+    public LiveVideoSourceMode VideoSourceMode
     {
-        get => _useCamera;
+        get => _videoSourceMode;
         set
         {
-            if (SetProperty(ref _useCamera, value))
+            if (SetProperty(ref _videoSourceMode, value))
             {
+                RaisePropertyChanged(nameof(IsCameraMode));
+                RaisePropertyChanged(nameof(IsSharedVideoMode));
                 RaiseCommandStates();
+            }
+        }
+    }
+
+    public bool IsCameraMode
+    {
+        get => VideoSourceMode == LiveVideoSourceMode.Camera;
+        set
+        {
+            if (value)
+            {
+                VideoSourceMode = LiveVideoSourceMode.Camera;
+            }
+        }
+    }
+
+    public bool IsSharedVideoMode
+    {
+        get => VideoSourceMode == LiveVideoSourceMode.SharedVideo;
+        set
+        {
+            if (value)
+            {
+                VideoSourceMode = LiveVideoSourceMode.SharedVideo;
             }
         }
     }
@@ -204,6 +231,8 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
             }
         }
     }
+
+    public ObservableCollection<string> CameraDevices { get; }
 
     public bool IncludeAudio
     {
@@ -365,7 +394,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         _liveStreamingService.StreamExited -= OnLiveStreamExited;
         _livePlaybackService.StatusChanged -= OnPlaybackStatusChanged;
         _livePlaybackService.LogReceived -= OnPlaybackLogReceived;
-        _ = _liveStreamingService.StopAsync();
+        _liveStreamingService.Dispose();
         _livePlaybackService.Dispose();
     }
 
@@ -407,7 +436,9 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     private bool CanUseDialogs() => !IsBusy;
     private bool CanOpenOutput() => !IsBusy && !string.IsNullOrWhiteSpace(OutputPath);
     private bool CanRunBackend() => !IsBusy && !IsLiveStreaming && File.Exists(InputPath);
-    private bool CanStartLive() => !IsLiveStreaming && !string.IsNullOrWhiteSpace(RtmpUrl) && (!UseCamera || !string.IsNullOrWhiteSpace(CameraDeviceName));
+    private bool CanStartLive() => !IsLiveStreaming
+        && !string.IsNullOrWhiteSpace(RtmpUrl)
+        && (!IsCameraMode || !string.IsNullOrWhiteSpace(CameraDeviceName));
     private bool CanStopLive() => IsLiveStreaming;
     private bool CanListLiveDevices() => !IsLiveStreaming;
     private bool CanStartPlayback() => !IsPlaybackActive && IsSupportedPlaybackUrl(PlaybackUrl);
@@ -497,8 +528,25 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         {
             LiveStatusText = "正在读取 DirectShow 设备...";
             var output = await _liveStreamingService.ListDevicesAsync();
+            var videoDevices = DirectShowDeviceParser.ParseVideoDeviceNames(output);
+
+            CameraDevices.Clear();
+            foreach (var device in videoDevices)
+            {
+                CameraDevices.Add(device);
+            }
+
+            if (videoDevices.Count > 0
+                && (string.IsNullOrWhiteSpace(CameraDeviceName)
+                    || !videoDevices.Contains(CameraDeviceName, StringComparer.OrdinalIgnoreCase)))
+            {
+                CameraDeviceName = videoDevices[0];
+            }
+
             AppendLiveSection("FFmpeg DirectShow 设备列表", output.TrimEnd());
-            LiveStatusText = "设备列表已读取";
+            LiveStatusText = videoDevices.Count == 0
+                ? "未找到摄像头设备"
+                : $"已找到 {videoDevices.Count} 个摄像头设备";
         }
         catch (Exception ex)
         {
@@ -570,9 +618,9 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
             return false;
         }
 
-        if (UseCamera && string.IsNullOrWhiteSpace(CameraDeviceName))
+        if (IsCameraMode && string.IsNullOrWhiteSpace(CameraDeviceName))
         {
-            AppendLiveLog("摄像头模式需要填写 DirectShow 视频设备名，请先点击“列出设备”。");
+            AppendLiveLog("摄像头模式需要先刷新并选择一个摄像头设备。");
             return false;
         }
 
@@ -609,7 +657,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         return new LiveStreamOptions
         {
             RtmpUrl = RtmpUrl,
-            UseCamera = UseCamera,
+            VideoSourceMode = VideoSourceMode,
             CameraDeviceName = CameraDeviceName,
             IncludeAudio = IncludeAudio,
             AudioDeviceName = AudioDeviceName,

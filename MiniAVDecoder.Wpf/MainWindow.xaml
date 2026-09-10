@@ -90,25 +90,32 @@
                                      Margin="0,0,0,8"/>
 
                             <TextBlock Grid.Row="1" Text="视频来源" Style="{StaticResource FieldLabelStyle}"/>
-                            <CheckBox Grid.Row="1"
-                                      Grid.Column="1"
-                                      Content="使用摄像头"
-                                      IsChecked="{Binding UseCamera}"
-                                      VerticalAlignment="Center"
-                                      Margin="0,0,12,8"/>
                             <StackPanel Grid.Row="1"
-                                        Grid.Column="2"
+                                        Grid.Column="1"
+                                        Grid.ColumnSpan="2"
                                         Orientation="Horizontal"
                                         Margin="0,0,0,8">
-                                <TextBox Text="{Binding CameraDeviceName, UpdateSourceTrigger=PropertyChanged}"
-                                         Width="260"
-                                         Height="32"
-                                         VerticalContentAlignment="Center"
-                                         Margin="0,0,10,0"
-                                         ToolTip="摄像头设备名，例如 Integrated Camera"/>
-                                <Button Content="列出设备"
+                                <RadioButton Content="摄像头模式"
+                                             IsChecked="{Binding IsCameraMode}"
+                                             GroupName="VideoSourceMode"
+                                             VerticalAlignment="Center"
+                                             Margin="0,0,18,0"/>
+                                <RadioButton Content="共享视频模式"
+                                             IsChecked="{Binding IsSharedVideoMode}"
+                                             GroupName="VideoSourceMode"
+                                             VerticalAlignment="Center"
+                                             Margin="0,0,18,0"/>
+                                <ComboBox Width="280"
+                                          Height="32"
+                                          ItemsSource="{Binding CameraDevices}"
+                                          SelectedItem="{Binding CameraDeviceName, UpdateSourceTrigger=PropertyChanged}"
+                                          IsEnabled="{Binding IsCameraMode}"
+                                          ToolTip="摄像头模式下选择视频采集设备"
+                                          Margin="0,0,10,0"/>
+                                <Button Content="刷新摄像头"
                                         Width="110"
                                         Height="32"
+                                        IsEnabled="{Binding IsCameraMode}"
                                         Command="{Binding ListLiveDevicesCommand}"/>
                             </StackPanel>
 
@@ -259,14 +266,11 @@
                             BorderThickness="1"
                             CornerRadius="6"
                             MouseDown="OnPlaybackVideoMouseDown">
-                        <Viewbox Style="{StaticResource LiveVideoViewBoxStyle}"
-                                 HorizontalAlignment="Stretch"
-                                 VerticalAlignment="Stretch"
-                                 StretchDirection="Both">
-                            <vlc:VideoView x:Name="LiveVideoView"
-                                           Width="1280"
-                                           Height="720"/>
-                        </Viewbox>
+                        <vlc:VideoView x:Name="LiveVideoView"
+                                       HorizontalAlignment="Stretch"
+                                       VerticalAlignment="Stretch"
+                                       HorizontalContentAlignment="Stretch"
+                                       VerticalContentAlignment="Stretch"/>
                     </Border>
 
                     <Border x:Name="PlaybackLogPanel"

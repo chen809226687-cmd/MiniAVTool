@@ -2,7 +2,7 @@ using MiniAVDecoder.Wpf.Models;
 
 namespace MiniAVDecoder.Wpf.Services;
 
-public interface ILiveStreamingService
+public interface ILiveStreamingService : IDisposable
 {
     event EventHandler<int>? StreamExited;
 

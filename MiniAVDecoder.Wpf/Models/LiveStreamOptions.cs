@@ -1,9 +1,15 @@
 namespace MiniAVDecoder.Wpf.Models;
 
+public enum LiveVideoSourceMode
+{
+    Camera,
+    SharedVideo
+}
+
 public sealed class LiveStreamOptions
 {
     public string RtmpUrl { get; init; } = string.Empty;
-    public bool UseCamera { get; init; }
+    public LiveVideoSourceMode VideoSourceMode { get; init; } = LiveVideoSourceMode.SharedVideo;
     public string CameraDeviceName { get; init; } = string.Empty;
     public bool IncludeAudio { get; init; }
     public string AudioDeviceName { get; init; } = string.Empty;

@@ -71,10 +71,13 @@ public sealed class LiveStreamingService : ILiveStreamingService, IDisposable
             try
             {
                 // FFmpeg 收到 stdin 的 "q" 会优雅退出，并写完整输出尾部信息。
-                await process.StandardInput.WriteLineAsync("q").WaitAsync(cancellationToken);
+                await process.StandardInput.WriteLineAsync("q")
+                    .WaitAsync(cancellationToken)
+                    .ConfigureAwait(false);
                 if (!process.WaitForExit(3000))
                 {
                     process.Kill(entireProcessTree: true);
+                    process.WaitForExit(3000);
                 }
             }
             catch
@@ -82,6 +85,7 @@ public sealed class LiveStreamingService : ILiveStreamingService, IDisposable
                 if (!process.HasExited)
                 {
                     process.Kill(entireProcessTree: true);
+                    process.WaitForExit(3000);
                 }
             }
         }
@@ -131,7 +135,16 @@ public sealed class LiveStreamingService : ILiveStreamingService, IDisposable
 
     public void Dispose()
     {
-        _ = StopAsync();
+        // 关闭窗口时必须等待 FFmpeg 退出，否则宿主进程结束后 FFmpeg
+        // 仍可能继续作为独立进程推流。
+        try
+        {
+            StopAsync().GetAwaiter().GetResult();
+        }
+        catch
+        {
+            // 释放阶段不能阻止窗口关闭；StopAsync 已在超时时尝试强制结束进程树。
+        }
     }
 
     private static Process CreateFfmpegProcess(LiveStreamOptions options, Action<string> onOutput)
@@ -169,7 +182,7 @@ public sealed class LiveStreamingService : ILiveStreamingService, IDisposable
         yield return "-loglevel";
         yield return "info";
 
-        if (options.UseCamera)
+        if (options.VideoSourceMode == LiveVideoSourceMode.Camera)
         {
             yield return "-f";
             yield return "dshow";

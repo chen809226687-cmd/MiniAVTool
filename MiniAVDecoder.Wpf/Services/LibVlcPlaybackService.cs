@@ -21,7 +21,12 @@ public sealed class LibVlcPlaybackService : ILivePlaybackService
         // Core.Initialize() 必须在创建 LibVLC 之前调用。
         Core.Initialize();
 
-        _libVlc = new LibVLC("--no-video-title-show", "--no-osd");
+        // WPF VideoView 使用原生视频输出窗口。关闭硬件解码可避免部分显卡
+        // 对 RTMP 摄像头流出现黑屏，但不影响 FFmpeg 推流端的编码。
+        _libVlc = new LibVLC(
+            "--no-video-title-show",
+            "--no-osd",
+            "--avcodec-hw=none");
         _mediaPlayer = new MediaPlayer(_libVlc);
 
         _mediaPlayer.Opening += (_, _) => RaiseStatus(LivePlaybackState.Connecting, "正在连接直播流...");
@@ -63,8 +68,9 @@ public sealed class LibVlcPlaybackService : ILivePlaybackService
 
         // FromLocation 支持 rtmp://、http://、https:// 等网络媒体地址。
         var media = new Media(_libVlc, normalizedUrl, FromType.FromLocation);
-        media.AddOption(":network-caching=500");
-        media.AddOption(":live-caching=500");
+        media.AddOption(":network-caching=1000");
+        media.AddOption(":live-caching=1000");
+        media.AddOption(":avcodec-hw=none");
 
         lock (_syncRoot)
         {
