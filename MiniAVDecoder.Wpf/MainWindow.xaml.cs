@@ -1,7 +1,7 @@
-using System.Windows;
-using System.Windows.Controls;
 using MiniAVDecoder.Wpf.Services;
 using MiniAVDecoder.Wpf.ViewModels;
+using System.Windows;
+using System.Windows.Controls;
 
 namespace MiniAVDecoder.Wpf;
 
