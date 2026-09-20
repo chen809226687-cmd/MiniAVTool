@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
         xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
         mc:Ignorable="d"
         Title="MiniAV 直播与媒体工具"
@@ -10,28 +11,88 @@
         Width="1180"
         MinHeight="680"
         MinWidth="1040"
+        Background="#F8FCFE"
+        WindowStartupLocation="CenterScreen"
         PreviewKeyDown="OnWindowPreviewKeyDown">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
 
         <Style x:Key="FieldLabelStyle" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#394354"/>
+            <Setter Property="Foreground" Value="#607D8B"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
-            <Setter Property="Margin" Value="0,0,12,8"/>
+            <Setter Property="Margin" Value="0,0,16,10"/>
         </Style>
 
         <Style x:Key="PanelBorderStyle" TargetType="Border">
-            <Setter Property="Background" Value="White"/>
-            <Setter Property="BorderBrush" Value="#D9DEE7"/>
+            <Setter Property="Background" Value="#FFFFFF"/>
+            <Setter Property="BorderBrush" Value="#E2F0F6"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="6"/>
-            <Setter Property="Padding" Value="14"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="18"/>
         </Style>
 
-        <Style x:Key="PrimaryButtonStyle" TargetType="Button">
-            <Setter Property="Width" Value="110"/>
-            <Setter Property="Height" Value="34"/>
+        <Style x:Key="PrimaryButtonStyle"
+               TargetType="Button"
+               BasedOn="{StaticResource MaterialDesignRaisedButton}">
+            <Setter Property="MinWidth" Value="108"/>
+            <Setter Property="Height" Value="36"/>
             <Setter Property="Margin" Value="0,0,10,0"/>
+            <Setter Property="Padding" Value="16,0"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="materialDesign:ButtonAssist.CornerRadius" Value="6"/>
+        </Style>
+
+        <Style x:Key="SecondaryButtonStyle"
+               TargetType="Button"
+               BasedOn="{StaticResource MaterialDesignOutlinedButton}">
+            <Setter Property="Height" Value="34"/>
+            <Setter Property="Padding" Value="14,0"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="materialDesign:ButtonAssist.CornerRadius" Value="6"/>
+        </Style>
+
+        <Style x:Key="CompactButtonStyle"
+               TargetType="Button"
+               BasedOn="{StaticResource MaterialDesignOutlinedButton}">
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="Padding" Value="12,0"/>
+            <Setter Property="materialDesign:ButtonAssist.CornerRadius" Value="6"/>
+        </Style>
+
+        <Style x:Key="SectionTitleStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#345D70"/>
+            <Setter Property="Margin" Value="0,0,0,12"/>
+        </Style>
+
+        <Style x:Key="LogTextBoxStyle"
+               TargetType="TextBox"
+               BasedOn="{StaticResource MaterialDesignOutlinedTextBox}">
+            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="FontFamily" Value="Consolas"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Background" Value="#FCFEFF"/>
+        </Style>
+
+        <Style TargetType="TextBox" BasedOn="{StaticResource MaterialDesignOutlinedTextBox}">
+            <Setter Property="Height" Value="36"/>
+            <Setter Property="Padding" Value="10,4"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+
+        <Style TargetType="ComboBox" BasedOn="{StaticResource MaterialDesignOutlinedComboBox}">
+            <Setter Property="Height" Value="36"/>
+            <Setter Property="Padding" Value="10,0"/>
+        </Style>
+
+        <Style TargetType="TabItem">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="20,10"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
         </Style>
 
         <Style x:Key="LiveVideoViewBoxStyle" TargetType="Viewbox">
@@ -44,22 +105,31 @@
         </Style>
     </Window.Resources>
 
-    <Grid x:Name="MainRoot" Background="#F5F7FA" Margin="18">
+    <Grid x:Name="MainRoot" Background="#F8FCFE" Margin="24">
         <Grid.RowDefinitions>
             <RowDefinition x:Name="TitleRow" Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <TextBlock x:Name="AppTitleText"
-                   Text="MiniAV 直播与媒体工具"
-                   FontSize="24"
-                   FontWeight="SemiBold"
-                   Foreground="#18202F"
-                   Margin="0,0,0,14"/>
+        <StackPanel x:Name="AppHeaderPanel" Margin="2,0,0,18">
+            <TextBlock x:Name="AppTitleText"
+                       Text="MiniAV 直播与媒体工具"
+                       FontSize="26"
+                       FontWeight="SemiBold"
+                       Foreground="#345D70"/>
+            <TextBlock Text="推流、播放与媒体分析"
+                       FontSize="13"
+                       Foreground="#88A5B2"
+                       Margin="0,4,0,0"/>
+        </StackPanel>
 
-        <TabControl x:Name="MainTabControl" Grid.Row="1">
+        <TabControl x:Name="MainTabControl"
+                    Grid.Row="1"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Padding="0">
             <TabItem Header="直播推流">
-                <Grid Background="#F5F7FA" Margin="0,14,0,0">
+                <Grid Background="Transparent" Margin="0,14,0,0">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="14"/>
@@ -116,6 +186,7 @@
                                         Width="110"
                                         Height="32"
                                         IsEnabled="{Binding IsCameraMode}"
+                                        Style="{StaticResource CompactButtonStyle}"
                                         Command="{Binding ListLiveDevicesCommand}"/>
                             </StackPanel>
 
@@ -168,7 +239,7 @@
                                         Style="{StaticResource PrimaryButtonStyle}"
                                         Command="{Binding StartLiveCommand}"/>
                                 <Button Content="停止直播"
-                                        Style="{StaticResource PrimaryButtonStyle}"
+                                        Style="{StaticResource SecondaryButtonStyle}"
                                         Command="{Binding StopLiveCommand}"/>
                                 <ProgressBar Width="180"
                                              Height="10"
@@ -184,7 +255,7 @@
                         </Grid>
                     </Border>
 
-                    <Border Grid.Row="2" Style="{StaticResource PanelBorderStyle}">
+                    <Border Grid.Row="2" Style="{StaticResource PanelBorderStyle}" Padding="18">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
@@ -192,13 +263,10 @@
                             </Grid.RowDefinitions>
 
                             <TextBlock Text="直播日志"
-                                       FontWeight="SemiBold"
-                                       Foreground="#18202F"
-                                       Margin="0,0,0,10"/>
+                                       Style="{StaticResource SectionTitleStyle}"/>
                             <TextBox Grid.Row="1"
+                                     Style="{StaticResource LogTextBoxStyle}"
                                      Text="{Binding LiveLogText, Mode=OneWay}"
-                                     FontFamily="Consolas"
-                                     FontSize="13"
                                      IsReadOnly="True"
                                      AcceptsReturn="True"
                                      TextWrapping="Wrap"
@@ -210,7 +278,7 @@
             </TabItem>
 
             <TabItem Header="观看直播">
-                <Grid x:Name="PlaybackPageGrid" Background="#F5F7FA" Margin="0,14,0,0">
+                <Grid x:Name="PlaybackPageGrid" Background="Transparent" Margin="0,14,0,0">
                     <Grid.RowDefinitions>
                         <RowDefinition x:Name="PlaybackControlRow" Height="Auto"/>
                         <RowDefinition x:Name="PlaybackSpacerRow" Height="14"/>
@@ -237,7 +305,7 @@
                                         Style="{StaticResource PrimaryButtonStyle}"
                                         Command="{Binding StartPlaybackCommand}"/>
                                 <Button Content="停止播放"
-                                        Style="{StaticResource PrimaryButtonStyle}"
+                                        Style="{StaticResource SecondaryButtonStyle}"
                                         Command="{Binding StopPlaybackCommand}"/>
                                 <TextBlock Text="画面比例"
                                            Style="{StaticResource FieldLabelStyle}"
@@ -249,7 +317,7 @@
                                           VerticalContentAlignment="Center"
                                           Margin="0,0,10,0"/>
                                 <Button Content="全屏"
-                                        Style="{StaticResource PrimaryButtonStyle}"
+                                        Style="{StaticResource SecondaryButtonStyle}"
                                         Click="OnToggleFullscreenButtonClick"/>
                                 <TextBlock Text="{Binding PlaybackStatusText}"
                                            Foreground="#667085"
@@ -285,13 +353,10 @@
                             </Grid.RowDefinitions>
 
                             <TextBlock Text="播放日志"
-                                       FontWeight="SemiBold"
-                                       Foreground="#18202F"
-                                       Margin="0,0,0,8"/>
+                                       Style="{StaticResource SectionTitleStyle}"/>
                             <TextBox Grid.Row="1"
+                                     Style="{StaticResource LogTextBoxStyle}"
                                      Text="{Binding PlaybackLogText, Mode=OneWay}"
-                                     FontFamily="Consolas"
-                                     FontSize="13"
                                      IsReadOnly="True"
                                      AcceptsReturn="True"
                                      TextWrapping="Wrap"
@@ -303,7 +368,7 @@
             </TabItem>
 
             <TabItem Header="媒体分析">
-                <Grid Background="#F5F7FA" Margin="0,14,0,0">
+                <Grid Background="Transparent" Margin="0,14,0,0">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="14"/>
@@ -335,6 +400,7 @@
                                     Width="110"
                                     Height="32"
                                     Margin="0,0,0,8"
+                                    Style="{StaticResource CompactButtonStyle}"
                                     Command="{Binding ChooseVideoCommand}"/>
 
                             <TextBlock Grid.Row="1" Text="输出目录" Style="{StaticResource FieldLabelStyle}"/>
@@ -352,10 +418,12 @@
                                         Width="110"
                                         Height="32"
                                         Margin="0,0,8,0"
+                                        Style="{StaticResource CompactButtonStyle}"
                                         Command="{Binding ChooseOutputCommand}"/>
                                 <Button Content="打开目录"
                                         Width="110"
                                         Height="32"
+                                        Style="{StaticResource CompactButtonStyle}"
                                         Command="{Binding OpenOutputCommand}"/>
                             </StackPanel>
 
@@ -401,7 +469,7 @@
                             <ColumnDefinition Width="1*"/>
                         </Grid.ColumnDefinitions>
 
-                        <Border Style="{StaticResource PanelBorderStyle}" Padding="12">
+                        <Border Style="{StaticResource PanelBorderStyle}" Padding="18">
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
@@ -409,13 +477,10 @@
                                 </Grid.RowDefinitions>
 
                                 <TextBlock Text="日志和报告"
-                                           FontWeight="SemiBold"
-                                           Foreground="#18202F"
-                                           Margin="0,0,0,10"/>
+                                           Style="{StaticResource SectionTitleStyle}"/>
                                 <TextBox Grid.Row="1"
+                                         Style="{StaticResource LogTextBoxStyle}"
                                          Text="{Binding LogText, Mode=OneWay}"
-                                         FontFamily="Consolas"
-                                         FontSize="13"
                                          IsReadOnly="True"
                                          AcceptsReturn="True"
                                          TextWrapping="Wrap"
@@ -424,7 +489,7 @@
                             </Grid>
                         </Border>
 
-                        <Border Grid.Column="2" Style="{StaticResource PanelBorderStyle}" Padding="12">
+                        <Border Grid.Column="2" Style="{StaticResource PanelBorderStyle}" Padding="18">
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
@@ -432,9 +497,7 @@
                                 </Grid.RowDefinitions>
 
                                 <TextBlock Text="帧预览"
-                                           FontWeight="SemiBold"
-                                           Foreground="#18202F"
-                                           Margin="0,0,0,10"/>
+                                           Style="{StaticResource SectionTitleStyle}"/>
                                 <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                                     <ItemsControl ItemsSource="{Binding FramePreviews}">
                                         <ItemsControl.ItemsPanel>

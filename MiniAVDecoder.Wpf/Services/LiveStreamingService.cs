@@ -1,13 +1,19 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
+using Microsoft.Win32.SafeHandles;
 using MiniAVDecoder.Wpf.Models;
 
 namespace MiniAVDecoder.Wpf.Services;
 
 public sealed class LiveStreamingService : ILiveStreamingService, IDisposable
 {
+    private const int GracefulExitTimeoutMilliseconds = 1500;
+    private const int ForcedExitTimeoutMilliseconds = 3000;
+
     private readonly object _syncRoot = new();
     private Process? _process;
+    private WindowsJobObject? _processJob;
 
     public event EventHandler<int>? StreamExited;
 
@@ -44,7 +50,21 @@ public sealed class LiveStreamingService : ILiveStreamingService, IDisposable
                 throw new InvalidOperationException("启动 FFmpeg 失败。");
             }
 
+            var processJob = WindowsJobObject.CreateKillOnCloseJob();
+            try
+            {
+                processJob.AssignProcess(process);
+            }
+            catch
+            {
+                process.Kill(entireProcessTree: true);
+                process.Dispose();
+                processJob.Dispose();
+                throw;
+            }
+
             _process = process;
+            _processJob = processJob;
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
             onOutput("FFmpeg 已启动，正在推流到 " + options.RtmpUrl);
@@ -72,20 +92,20 @@ public sealed class LiveStreamingService : ILiveStreamingService, IDisposable
             {
                 // FFmpeg 收到 stdin 的 "q" 会优雅退出，并写完整输出尾部信息。
                 await process.StandardInput.WriteLineAsync("q")
-                    .WaitAsync(cancellationToken)
+                    .WaitAsync(TimeSpan.FromMilliseconds(GracefulExitTimeoutMilliseconds), cancellationToken)
                     .ConfigureAwait(false);
-                if (!process.WaitForExit(3000))
+                if (!process.WaitForExit(GracefulExitTimeoutMilliseconds))
                 {
-                    process.Kill(entireProcessTree: true);
-                    process.WaitForExit(3000);
+                    KillProcessTree(process);
+                    process.WaitForExit(ForcedExitTimeoutMilliseconds);
                 }
             }
             catch
             {
                 if (!process.HasExited)
                 {
-                    process.Kill(entireProcessTree: true);
-                    process.WaitForExit(3000);
+                    KillProcessTree(process);
+                    process.WaitForExit(ForcedExitTimeoutMilliseconds);
                 }
             }
         }
@@ -95,6 +115,7 @@ public sealed class LiveStreamingService : ILiveStreamingService, IDisposable
             if (ReferenceEquals(_process, process))
             {
                 _process = null;
+                DisposeProcessJob();
             }
         }
 
@@ -292,6 +313,27 @@ public sealed class LiveStreamingService : ILiveStreamingService, IDisposable
         }
     }
 
+    private static void KillProcessTree(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch
+        {
+            // Process may have exited between the check and the kill call.
+        }
+    }
+
+    private void DisposeProcessJob()
+    {
+        _processJob?.Dispose();
+        _processJob = null;
+    }
+
     private void HandleProcessExited(Process process)
     {
         var exitCode = process.ExitCode;
@@ -300,9 +342,119 @@ public sealed class LiveStreamingService : ILiveStreamingService, IDisposable
             if (ReferenceEquals(_process, process))
             {
                 _process = null;
+                DisposeProcessJob();
             }
         }
 
         StreamExited?.Invoke(this, exitCode);
+    }
+}
+
+internal sealed class WindowsJobObject : IDisposable
+{
+    private const int JobObjectExtendedLimitInformation = 9;
+    private const uint JobObjectLimitKillOnJobClose = 0x00002000;
+
+    private readonly SafeFileHandle _handle;
+
+    private WindowsJobObject(SafeFileHandle handle)
+    {
+        _handle = handle;
+    }
+
+    public static WindowsJobObject CreateKillOnCloseJob()
+    {
+        var handle = CreateJobObjectW(IntPtr.Zero, null);
+        if (handle.IsInvalid)
+        {
+            throw new InvalidOperationException("CreateJobObject failed.", Marshal.GetExceptionForHR(Marshal.GetHRForLastWin32Error()));
+        }
+
+        var info = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+        {
+            BasicLimitInformation = new JOBOBJECT_BASIC_LIMIT_INFORMATION
+            {
+                LimitFlags = JobObjectLimitKillOnJobClose
+            }
+        };
+
+        var length = Marshal.SizeOf<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>();
+        var infoPointer = Marshal.AllocHGlobal(length);
+        try
+        {
+            Marshal.StructureToPtr(info, infoPointer, fDeleteOld: false);
+            if (!SetInformationJobObject(handle, JobObjectExtendedLimitInformation, infoPointer, (uint)length))
+            {
+                throw new InvalidOperationException("SetInformationJobObject failed.", Marshal.GetExceptionForHR(Marshal.GetHRForLastWin32Error()));
+            }
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(infoPointer);
+        }
+
+        return new WindowsJobObject(handle);
+    }
+
+    public void AssignProcess(Process process)
+    {
+        if (!AssignProcessToJobObject(_handle, process.Handle))
+        {
+            throw new InvalidOperationException("AssignProcessToJobObject failed.", Marshal.GetExceptionForHR(Marshal.GetHRForLastWin32Error()));
+        }
+    }
+
+    public void Dispose()
+    {
+        _handle.Dispose();
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern SafeFileHandle CreateJobObjectW(IntPtr lpJobAttributes, string? lpName);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetInformationJobObject(
+        SafeFileHandle hJob,
+        int jobObjectInfoClass,
+        IntPtr lpJobObjectInfo,
+        uint cbJobObjectInfoLength);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool AssignProcessToJobObject(SafeFileHandle hJob, IntPtr hProcess);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct IO_COUNTERS
+    {
+        public ulong ReadOperationCount;
+        public ulong WriteOperationCount;
+        public ulong OtherOperationCount;
+        public ulong ReadTransferCount;
+        public ulong WriteTransferCount;
+        public ulong OtherTransferCount;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JOBOBJECT_BASIC_LIMIT_INFORMATION
+    {
+        public long PerProcessUserTimeLimit;
+        public long PerJobUserTimeLimit;
+        public uint LimitFlags;
+        public nuint MinimumWorkingSetSize;
+        public nuint MaximumWorkingSetSize;
+        public uint ActiveProcessLimit;
+        public nuint Affinity;
+        public uint PriorityClass;
+        public uint SchedulingClass;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+    {
+        public JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation;
+        public IO_COUNTERS IoInfo;
+        public nuint ProcessMemoryLimit;
+        public nuint JobMemoryLimit;
+        public nuint PeakProcessMemoryUsed;
+        public nuint PeakJobMemoryUsed;
     }
 }

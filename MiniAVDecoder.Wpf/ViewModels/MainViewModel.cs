@@ -1,13 +1,12 @@
+using MiniAVDecoder.Wpf.Infrastructure;
+using MiniAVDecoder.Wpf.Models;
+using MiniAVDecoder.Wpf.Services;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Text;
 using System.Text.Json;
-using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using MiniAVDecoder.Wpf.Infrastructure;
-using MiniAVDecoder.Wpf.Models;
-using MiniAVDecoder.Wpf.Services;
 
 namespace MiniAVDecoder.Wpf.ViewModels;
 
@@ -33,7 +32,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     private string _logText = string.Empty;
     private int _frameCount = 30;
     private bool _isBusy;
-  
+
     private string _rtmpUrl = "rtmp://111.229.145.58/live/test";
     private LiveVideoSourceMode _videoSourceMode = LiveVideoSourceMode.SharedVideo;
     private string _cameraDeviceName = string.Empty;
@@ -50,6 +49,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     private string _playbackStatusText = "未播放";
     private string _playbackLogText = string.Empty;
     private bool _isPlaybackActive;
+    private bool _hasPlaybackStarted;
 
     private readonly RelayCommand _chooseVideoCommand;
     private readonly RelayCommand _chooseOutputCommand;
@@ -565,12 +565,14 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         try
         {
             IsPlaybackActive = true;
+            _hasPlaybackStarted = false;
             PlaybackStatusText = "正在连接...";
             await _livePlaybackService.PlayAsync(PlaybackUrl);
         }
         catch (Exception ex)
         {
             IsPlaybackActive = false;
+            _hasPlaybackStarted = false;
             PlaybackStatusText = "播放启动失败";
             AppendPlaybackLog(ex.Message);
         }
@@ -583,6 +585,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
             PlaybackStatusText = "正在停止...";
             await _livePlaybackService.StopAsync();
             IsPlaybackActive = false;
+            _hasPlaybackStarted = false;
             PlaybackStatusText = "已停止";
             AppendPlaybackLog("已停止播放。");
         }
@@ -807,12 +810,33 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     {
         RunOnUiThread(() =>
         {
-            PlaybackStatusText = e.Message;
             AppendPlaybackLog(e.Message);
 
-            if (e.State is LivePlaybackState.Stopped or LivePlaybackState.Error)
+            switch (e.State)
             {
-                IsPlaybackActive = false;
+                case LivePlaybackState.Playing:
+                    _hasPlaybackStarted = true;
+                    IsPlaybackActive = true;
+                    PlaybackStatusText = e.Message;
+                    break;
+
+                case LivePlaybackState.Connecting:
+                case LivePlaybackState.Buffering:
+                case LivePlaybackState.Paused:
+                    IsPlaybackActive = true;
+                    if (!_hasPlaybackStarted && !_livePlaybackService.IsPlaying)
+                    {
+                        PlaybackStatusText = e.Message;
+                    }
+
+                    break;
+
+                case LivePlaybackState.Stopped:
+                case LivePlaybackState.Error:
+                    _hasPlaybackStarted = false;
+                    IsPlaybackActive = false;
+                    PlaybackStatusText = e.Message;
+                    break;
             }
         });
     }

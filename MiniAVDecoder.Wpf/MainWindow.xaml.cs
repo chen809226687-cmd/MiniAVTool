@@ -1,5 +1,6 @@
 using MiniAVDecoder.Wpf.Services;
 using MiniAVDecoder.Wpf.ViewModels;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 
@@ -20,6 +21,7 @@ public partial class MainWindow : Window
     private ControlTemplate? _normalTabControlTemplate;
     private bool _normalTopmost;
     private bool _isFullscreen;
+    private bool _isDisposed;
 
     public MainWindow()
     {
@@ -87,7 +89,7 @@ public partial class MainWindow : Window
         // LibVLC 的 WPF 渲染绑定在原生窗口句柄上，跨窗口搬播放器容易黑屏。
         MainRoot.Margin = new Thickness(0);
         PlaybackPageGrid.Margin = new Thickness(0);
-        AppTitleText.Visibility = Visibility.Collapsed;
+        AppHeaderPanel.Visibility = Visibility.Collapsed;
         PlaybackControlPanel.Visibility = Visibility.Collapsed;
         PlaybackLogPanel.Visibility = Visibility.Collapsed;
 
@@ -130,7 +132,7 @@ public partial class MainWindow : Window
         PlaybackLogRow.Height = _normalPlaybackLogRowHeight;
         MainTabControl.Template = _normalTabControlTemplate;
 
-        AppTitleText.Visibility = Visibility.Visible;
+        AppHeaderPanel.Visibility = Visibility.Visible;
         PlaybackControlPanel.Visibility = Visibility.Visible;
         PlaybackLogPanel.Visibility = Visibility.Visible;
         PlaybackVideoBorder.BorderThickness = new Thickness(1);
@@ -161,8 +163,30 @@ public partial class MainWindow : Window
         return template;
     }
 
+    protected override void OnClosing(CancelEventArgs e)
+    {
+        base.OnClosing(e);
+        if (e.Cancel)
+        {
+            return;
+        }
+
+        if (_isFullscreen)
+        {
+            ExitFullscreen();
+        }
+
+        DisposeViewModel();
+    }
+
     protected override void OnClosed(EventArgs e)
     {
+        if (_isDisposed)
+        {
+            base.OnClosed(e);
+            return;
+        }
+
         if (_isFullscreen)
         {
             ExitFullscreen();
@@ -177,5 +201,23 @@ public partial class MainWindow : Window
         }
 
         base.OnClosed(e);
+    }
+
+    private void DisposeViewModel()
+    {
+        if (_isDisposed)
+        {
+            return;
+        }
+
+        _isDisposed = true;
+        LiveVideoView.MediaPlayer = null;
+
+        if (DataContext is IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
+
+        DataContext = null;
     }
 }
