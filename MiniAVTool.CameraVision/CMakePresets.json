@@ -1,0 +1,39 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "x64-debug-opencv",
+      "displayName": "x64 Debug - OpenCV 5.0.0",
+      "generator": "Visual Studio 18 2026",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "MINICV_OPENCV_ROOT": "D:/新建文件夹/opencv/build",
+        "OpenCV_DIR": "D:/新建文件夹/opencv/build/x64/vc16/lib"
+      }
+    },
+    {
+      "name": "x64-release-opencv",
+      "displayName": "x64 Release - OpenCV 5.0.0",
+      "generator": "Visual Studio 18 2026",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "MINICV_OPENCV_ROOT": "D:/新建文件夹/opencv/build",
+        "OpenCV_DIR": "D:/新建文件夹/opencv/build/x64/vc16/lib"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "x64-debug-opencv",
+      "configurePreset": "x64-debug-opencv",
+      "configuration": "Debug"
+    },
+    {
+      "name": "x64-release-opencv",
+      "configurePreset": "x64-release-opencv",
+      "configuration": "Release"
+    }
+  ]
+}

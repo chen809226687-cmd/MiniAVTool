@@ -2,3 +2,7 @@ bin
 obj
 .vs
 x64
+
+MiniAVTool.CameraVision/build/
+MiniAVTool.CameraVision/install/
+MiniAVTool.CameraVision/captures/

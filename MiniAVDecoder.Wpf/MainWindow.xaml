@@ -303,7 +303,7 @@
                             <StackPanel Grid.Column="2" Orientation="Horizontal">
                                 <Button Content="开始播放"
                                         Style="{StaticResource PrimaryButtonStyle}"
-                                        Command="{Binding StartPlaybackCommand}"/>
+                                        Command="{Binding StartPlaybackCommand}" Click="Button_Click"/>
                                 <Button Content="停止播放"
                                         Style="{StaticResource SecondaryButtonStyle}"
                                         Command="{Binding StopPlaybackCommand}"/>
