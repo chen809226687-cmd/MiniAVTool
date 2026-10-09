@@ -1,80 +1,82 @@
 # MiniAVTool Camera Vision
 
-This is the first C++/OpenCV learning project in MiniAVTool.
+An OpenCV camera-vision sample built with C++20 and CMake.
 
-The program opens the default camera and displays:
+## Features
 
-- Live camera frames
-- FPS, resolution, and timestamp
-- Grayscale processing
-- Canny edge detection
-- Binary thresholding
-- Motion regions based on frame differences
-- Screenshot saving
+- Live camera preview
+- FPS, resolution, timestamp, and current mode overlay
+- Grayscale, Canny edge, and binary threshold views
+- Motion-region detection from frame differences
+- Snapshot saving under `captures/`
 
-## OpenCV Installation
+## Requirements
 
-The project is currently configured for this local OpenCV installation:
+- CMake 3.24 or newer
+- A C++20 compiler
+- OpenCV 5.x with CMake package files
+- A camera supported by the selected OpenCV backend
 
-```text
-D:\新建文件夹\opencv\build
+The repository does not contain machine-specific OpenCV paths. Configure the local
+installation in `CMakeUserPresets.json`, which is ignored by Git.
+
+## Configure OpenCV
+
+Copy `CMakeUserPresets.json.example` to `CMakeUserPresets.json` and update the
+path to the directory containing `OpenCVConfig.cmake`:
+
+```json
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "x64-debug-local",
+      "inherits": "x64-debug",
+      "cacheVariables": {
+        "OpenCV_DIR": "E:/opencv/opencv/build/x64/vc16/lib"
+      }
+    }
+  ]
+}
 ```
 
-Important directories:
-
-```text
-Headers:
-D:\新建文件夹\opencv\build\include
-
-Libraries:
-D:\新建文件夹\opencv\build\x64\vc16\lib
-
-Runtime DLLs:
-D:\新建文件夹\opencv\build\x64\vc16\bin
-```
-
-## Build With CMake
-
-From this directory:
+The existing local machine can use:
 
 ```powershell
-cmake --preset x64-debug-opencv
-cmake --build --preset x64-debug-opencv --parallel 4
+cmake --preset x64-debug-local
+cmake --build --preset x64-debug-local --parallel 4
 ```
 
-Release:
+For Release:
 
 ```powershell
-cmake --preset x64-release-opencv
-cmake --build --preset x64-release-opencv --parallel 4
+cmake --preset x64-release-local
+cmake --build --preset x64-release-local --parallel 4
 ```
 
 The executable is generated under:
 
 ```text
-build\x64-debug-opencv\Debug\
-build\x64-release-opencv\Release\
+build\x64-debug-local\Debug\
+build\x64-release-local\Release\
 ```
 
-## Build With Visual Studio
+## Visual Studio
 
-Open the solution:
+The recommended workflow is to configure and build through CMake. The checked-in
+`.vcxproj` remains available for compatibility with the existing solution and
+uses the local OpenCV path currently configured on this machine.
 
-```text
-E:\CodeOther\MiniAVTool\MiniAVDecoder.Wpf.sln
+## Usage
+
+```powershell
+MiniAVTool.CameraVision.exe [camera-index]
 ```
 
-Select:
+The default camera index is `0`. On Windows, the application tries DirectShow
+first and Media Foundation as a fallback.
 
-```text
-Project: MiniAVTool.CameraVision
-Configuration: Debug
-Platform: x64
-```
-
-The `.vcxproj` already contains the OpenCV include path, library path, linker dependency, and a native MSBuild task that copies required DLLs after build.
-
-## Keyboard Controls
+Keyboard controls:
 
 | Key | Action |
 | --- | --- |
@@ -83,21 +85,16 @@ The `.vcxproj` already contains the OpenCV include path, library path, linker de
 | `3` | Canny edges |
 | `4` | Binary threshold |
 | `5` | Motion detection |
-| `S` | Save the current frame under `captures` |
+| `S` | Save a snapshot |
 | `ESC` | Exit |
 
-The default camera index is `0`. To use another camera:
+## Source Layout
 
-```powershell
-MiniAVTool.CameraVision.exe 1
+```text
+src/
+  camera/   Camera opening and backend selection
+  io/       Snapshot persistence
+  ui/       OpenCV overlay drawing
+  vision/   Frame processing and motion detection
+  main.cpp  Application loop and input dispatch
 ```
-
-## Suggested Reading Order
-
-Read `src/main.cpp` in this order:
-
-1. `openCamera`
-2. `detectMotion`
-3. `processFrame`
-4. `drawOverlay`
-5. `main`

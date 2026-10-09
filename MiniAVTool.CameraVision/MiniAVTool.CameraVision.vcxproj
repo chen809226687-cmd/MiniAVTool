@@ -1,54 +1,52 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
+    <!-- Debug x64 配置：保留调试信息并链接 OpenCV Debug 库。 -->
     <ProjectConfiguration Include="Debug|x64">
       <Configuration>Debug</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
+    <!-- Release x64 配置：启用优化并链接 OpenCV Release 库。 -->
     <ProjectConfiguration Include="Release|x64">
       <Configuration>Release</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
   </ItemGroup>
-
   <PropertyGroup Label="Globals">
+    <!-- Visual Studio 项目版本和项目唯一标识。 -->
     <VCProjectVersion>18.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{7B6A7D5D-6E56-4D0D-9A0D-4D4C0D9A7C21}</ProjectGuid>
     <RootNamespace>MiniAVToolCameraVision</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <OpenCVRoot>D:\新建文件夹\opencv\build</OpenCVRoot>
+    <!-- 当前机器上 OpenCV 安装的根目录；推荐使用 CMake 作为可移植构建入口。 -->
+    <OpenCVRoot>E:\opencv\opencv\build</OpenCVRoot>
   </PropertyGroup>
-
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
-
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <!-- Debug 生成 Windows 控制台程序，并保留调试库设置。 -->
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v145</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <!-- Release 生成经过优化的 Windows 控制台程序。 -->
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v145</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
-
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"
-            Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')"
-            Label="LocalAppDataPlatform" />
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"
-            Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')"
-            Label="LocalAppDataPlatform" />
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
-
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <!-- Debug 编译器、头文件、链接器和 OpenCV Debug 库配置。 -->
     <ClCompile>
       <WarningLevel>Level4</WarningLevel>
       <SDLCheck>true</SDLCheck>
@@ -65,8 +63,8 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
-
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <!-- Release 编译器、头文件、链接器和 OpenCV Release 库配置。 -->
     <ClCompile>
       <WarningLevel>Level4</WarningLevel>
       <FunctionLevelLinking>true</FunctionLevelLinking>
@@ -85,12 +83,20 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
-
   <ItemGroup>
+    <!-- 与 CMakeLists.txt 保持一致的 C++ 源文件列表。 -->
+    <ClCompile Include="src\camera\camera_capture.cpp" />
+    <ClCompile Include="src\io\snapshot_writer.cpp" />
     <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\ui\overlay.cpp" />
+    <ClCompile Include="src\vision\frame_processor.cpp" />
+    <ClInclude Include="src\camera\camera_capture.h" />
+    <ClInclude Include="src\io\snapshot_writer.h" />
+    <ClInclude Include="src\ui\overlay.h" />
+    <ClInclude Include="src\vision\frame_processor.h" />
   </ItemGroup>
-
   <Target Name="CopyOpenCvRuntime" AfterTargets="Build">
+    <!-- 构建成功后复制 OpenCV 运行时 DLL 到 exe 所在目录。 -->
     <ItemGroup Condition="'$(Configuration)'=='Debug'">
       <OpenCvRuntime Include="$(OpenCVRoot)\x64\vc16\bin\opencv_world500d.dll" />
       <OpenCvRuntime Include="$(OpenCVRoot)\x64\vc16\bin\opencv_videoio_msmf500_64d.dll" />
@@ -102,11 +108,8 @@
     <ItemGroup>
       <OpenCvRuntime Include="$(OpenCVRoot)\x64\vc16\bin\opencv_videoio_ffmpeg500_64.dll" />
     </ItemGroup>
-    <Copy SourceFiles="@(OpenCvRuntime)"
-          DestinationFolder="$(OutDir)"
-          SkipUnchangedFiles="true"
-          Condition="'@(OpenCvRuntime)'!=''" />
+    <Copy SourceFiles="@(OpenCvRuntime)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" Condition="'@(OpenCvRuntime)'!=''" />
   </Target>
-
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>
+    <!-- 与源码对应的头文件列表，方便 Visual Studio 项目树展示。 -->

@@ -1,0 +1,31 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "x64-debug-local",
+      "inherits": "x64-debug",
+      "cacheVariables": {
+        "OpenCV_DIR": "C:/path/to/opencv/build/x64/vc16/lib"
+      }
+    },
+    {
+      "name": "x64-release-local",
+      "inherits": "x64-release",
+      "cacheVariables": {
+        "OpenCV_DIR": "C:/path/to/opencv/build/x64/vc16/lib"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "x64-debug-local",
+      "configurePreset": "x64-debug-local",
+      "configuration": "Debug"
+    },
+    {
+      "name": "x64-release-local",
+      "configurePreset": "x64-release-local",
+      "configuration": "Release"
+    }
+  ]
+}

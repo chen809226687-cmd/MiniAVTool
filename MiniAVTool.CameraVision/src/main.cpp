@@ -1,280 +1,206 @@
-#include <opencv2/core.hpp>
-#include <opencv2/geometry/2d.hpp>
+// 摄像头模块：负责选择后端并打开采集设备。
+#include "camera/camera_capture.h"
+
+// 截图模块：负责创建目录和写入 JPG 文件。
+#include "io/snapshot_writer.h"
+
+// UI 模块：负责绘制状态信息和时间戳。
+#include "ui/overlay.h"
+
+// 视觉模块：负责显示模式、运动检测和图像处理。
+#include "vision/frame_processor.h"
+
+// highgui 提供窗口、键盘事件和图像显示接口。
 #include <opencv2/highgui.hpp>
-#include <opencv2/imgcodecs.hpp>
-#include <opencv2/imgproc.hpp>
+
+// VideoCapture 在 main 中以 RAII 对象形式持有摄像头。
 #include <opencv2/videoio.hpp>
 
+// max 用于把用户输入的摄像头索引限制为非负数。
 #include <algorithm>
+
+// steady_clock 用于计算稳定的帧间隔和 FPS。
 #include <chrono>
-#include <ctime>
+
+// stoi 可能抛出 invalid_argument 或 out_of_range。
 #include <exception>
+
+// path 用于表示 captures 输出目录。
 #include <filesystem>
-#include <iomanip>
+
+// 控制台输出启动信息和错误信息。
 #include <iostream>
-#include <sstream>
+
+// 命令行参数和错误文本使用 string。
 #include <string>
-#include <vector>
 
 namespace {
 
+// OpenCV 窗口的固定名称。
 constexpr char kWindowName[] = "MiniAV Camera Vision";
 
-enum class ViewMode {
-    Original,
-    Gray,
-    Edges,
-    Threshold,
-    Motion,
-};
-
-struct MotionResult {
-    cv::Mat mask;
-    std::vector<cv::Rect> regions;
-};
-
-std::string formatTimestamp(const std::chrono::system_clock::time_point now) {
-    const auto time = std::chrono::system_clock::to_time_t(now);
-    std::tm localTime{};
-#ifdef _WIN32
-    localtime_s(&localTime, &time);
-#else
-    localtime_r(&time, &localTime);
-#endif
-
-    std::ostringstream output;
-    output << std::put_time(&localTime, "%Y-%m-%d %H:%M:%S");
-    return output.str();
-}
-
-std::string modeName(const ViewMode mode) {
-    switch (mode) {
-    case ViewMode::Original:
-        return "Original";
-    case ViewMode::Gray:
-        return "Gray";
-    case ViewMode::Edges:
-        return "Canny edges";
-    case ViewMode::Threshold:
-        return "Threshold";
-    case ViewMode::Motion:
-        return "Motion";
-    }
-
-    return "Unknown";
-}
-
-bool openCamera(cv::VideoCapture& camera, const int cameraIndex) {
-#ifdef _WIN32
-    if (!camera.open(cameraIndex, cv::CAP_DSHOW)) {
-        return false;
-    }
-#else
-    if (!camera.open(cameraIndex)) {
-        return false;
-    }
-#endif
-
-    camera.set(cv::CAP_PROP_FRAME_WIDTH, 1280);
-    camera.set(cv::CAP_PROP_FRAME_HEIGHT, 720);
-    camera.set(cv::CAP_PROP_FPS, 30);
-    return true;
-}
-
-MotionResult detectMotion(const cv::Mat& frame, cv::Mat& backgroundGray) {
-    cv::Mat gray;
-    cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
-    cv::GaussianBlur(gray, gray, cv::Size(21, 21), 0.0);
-
-    if (backgroundGray.empty()) {
-        backgroundGray = gray.clone();
-        return {};
-    }
-
-    cv::Mat difference;
-    cv::absdiff(backgroundGray, gray, difference);
-    cv::threshold(difference, difference, 25, 255, cv::THRESH_BINARY);
-    cv::dilate(difference, difference, cv::Mat(), cv::Point(-1, -1), 2);
-
-    std::vector<std::vector<cv::Point>> contours;
-    cv::findContours(difference, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-
-    MotionResult result;
-    result.mask = difference;
-    for (const auto& contour : contours) {
-        if (cv::contourArea(contour) >= 900.0) {
-            result.regions.push_back(cv::boundingRect(contour));
-        }
-    }
-
-    // Slowly follow lighting changes without immediately absorbing moving objects.
-    cv::addWeighted(backgroundGray, 0.95, gray, 0.05, 0.0, backgroundGray);
-    return result;
-}
-
-cv::Mat processFrame(const cv::Mat& frame, const ViewMode mode, const MotionResult& motion) {
-    cv::Mat gray;
-    cv::Mat output;
-
-    switch (mode) {
-    case ViewMode::Original:
-        output = frame.clone();
-        break;
-    case ViewMode::Gray:
-        cv::cvtColor(frame, output, cv::COLOR_BGR2GRAY);
-        cv::cvtColor(output, output, cv::COLOR_GRAY2BGR);
-        break;
-    case ViewMode::Edges:
-        cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
-        cv::GaussianBlur(gray, gray, cv::Size(5, 5), 0.0);
-        cv::Canny(gray, gray, 50.0, 150.0);
-        cv::cvtColor(gray, output, cv::COLOR_GRAY2BGR);
-        break;
-    case ViewMode::Threshold:
-        cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
-        cv::threshold(gray, gray, 120.0, 255.0, cv::THRESH_BINARY);
-        cv::cvtColor(gray, output, cv::COLOR_GRAY2BGR);
-        break;
-    case ViewMode::Motion:
-        output = frame.clone();
-        for (const auto& region : motion.regions) {
-            cv::rectangle(output, region, cv::Scalar(0, 0, 255), 2);
-            cv::putText(output, "motion", region.tl() + cv::Point(0, -8),
-                        cv::FONT_HERSHEY_SIMPLEX, 0.65, cv::Scalar(0, 0, 255), 2,
-                        cv::LINE_AA);
-        }
-        break;
-    }
-
-    return output;
-}
-
-void drawOverlay(cv::Mat& frame, const double fps, const ViewMode mode,
-                 const std::string& timestamp, const std::size_t motionCount) {
-    const auto white = cv::Scalar(245, 245, 245);
-    const auto cyan = cv::Scalar(255, 210, 0);
-    const auto black = cv::Scalar(20, 20, 20);
-
-    cv::rectangle(frame, cv::Rect(0, 0, frame.cols, 82), black, cv::FILLED);
-    cv::putText(frame, "MiniAV Camera Vision", cv::Point(18, 28),
-                cv::FONT_HERSHEY_SIMPLEX, 0.72, cyan, 2, cv::LINE_AA);
-
-    std::ostringstream metrics;
-    metrics << std::fixed << std::setprecision(1) << "FPS: " << fps
-            << " | " << frame.cols << "x" << frame.rows
-            << " | Mode: " << modeName(mode);
-    cv::putText(frame, metrics.str(), cv::Point(18, 56),
-                cv::FONT_HERSHEY_SIMPLEX, 0.58, white, 1, cv::LINE_AA);
-
-    cv::putText(frame, timestamp, cv::Point(18, frame.rows - 42),
-                cv::FONT_HERSHEY_SIMPLEX, 0.58, white, 1, cv::LINE_AA);
-    cv::putText(frame, "1 Original  2 Gray  3 Edge  4 Binary  5 Motion  S Snapshot  ESC Exit",
-                cv::Point(18, frame.rows - 16), cv::FONT_HERSHEY_SIMPLEX, 0.48, white, 1,
-                cv::LINE_AA);
-
-    if (mode == ViewMode::Motion) {
-        std::ostringstream motionText;
-        motionText << "Motion regions: " << motionCount;
-        cv::putText(frame, motionText.str(), cv::Point(frame.cols - 220, 56),
-                    cv::FONT_HERSHEY_SIMPLEX, 0.55, cv::Scalar(0, 220, 255), 1,
-                    cv::LINE_AA);
-    }
-}
+// 截图保存目录，相对于程序当前工作目录。
+constexpr auto kCaptureDirectory = "captures";
 
 int parseCameraIndex(const int argc, char* argv[]) {
+    // 没有提供参数时使用默认摄像头 0。
     if (argc < 2) {
         return 0;
     }
 
     try {
-        return std::max(0, std::stoi(argv[1]));
+        // 将第一个命令行参数解析为摄像头索引。
+        const auto index = std::stoi(argv[1]);
+
+        // 防止负索引传入 OpenCV。
+        return std::max(0, index);
     } catch (const std::exception&) {
+        // 参数不是整数时提示用户，并回退到默认摄像头。
+        std::cerr << "Invalid camera index '" << argv[1] << "', using 0.\n";
         return 0;
     }
+}
+
+void printUsage() {
+    // 启动时打印命令行用法和交互按键。
+    std::cout << "Usage: MiniAVTool.CameraVision [camera-index]\n"
+              << "Controls: 1-5 change view, S save snapshot, ESC exit.\n";
 }
 
 } // namespace
 
 int main(int argc, char* argv[]) {
-    const auto cameraIndex = parseCameraIndex(argc, argv);
+    // 先打印使用说明，方便直接从终端启动程序的用户。
+    printUsage();
+
+    // VideoCapture 对象代表当前摄像头连接。
     cv::VideoCapture camera;
-    if (!openCamera(camera, cameraIndex)) {
-        std::cerr << "Cannot open camera index " << cameraIndex << ".\n"
-                  << "Make sure the camera is connected and not in use by another app.\n";
+
+    // 由摄像头模块填充可读的失败原因。
+    std::string error;
+
+    // 根据命令行索引打开摄像头；打开失败时结束程序。
+    if (!miniav::camera::open(camera, parseCameraIndex(argc, argv), error)) {
+        std::cerr << error << '\n';
         return 1;
     }
 
-    std::filesystem::create_directories("captures");
+    // 创建一个可调整大小的 OpenCV 窗口。
     cv::namedWindow(kWindowName, cv::WINDOW_NORMAL);
+
+    // 设置窗口初始尺寸，不会强制改变摄像头真实分辨率。
     cv::resizeWindow(kWindowName, 1280, 720);
 
-    ViewMode mode = ViewMode::Original;
+    // 默认显示原始彩色画面。
+    auto mode = miniav::vision::ViewMode::Original;
+
+    // 由运动检测函数持续维护的灰度背景模型。
     cv::Mat backgroundGray;
+
+    // camera.read 每一帧写入的原始图像。
     cv::Mat frame;
+
+    // 当前模式处理后的图像，也是显示和截图的来源。
     cv::Mat processed;
+
+    // 截图输出目录使用 path，避免手工拼接平台相关分隔符。
+    const auto captureDirectory = std::filesystem::path(kCaptureDirectory);
+
+    // 使用单调时钟计算帧率，避免系统时间被校准时导致 FPS 跳变。
     auto previousFrameTime = std::chrono::steady_clock::now();
+
+    // FPS 使用平滑值，减少单帧耗时变化导致的画面抖动。
     double fps = 0.0;
 
-    std::cout << "Camera opened. Press 1-5 to change mode, S to save, ESC to exit.\n";
-
+    // 主循环每次处理一帧并响应一次键盘输入。
     while (true) {
+        // 从摄像头读取下一帧；读取失败通常表示设备断开或后端异常。
         if (!camera.read(frame) || frame.empty()) {
             std::cerr << "Failed to read a camera frame.\n";
             break;
         }
 
+        // 记录当前帧到达时间。
         const auto currentFrameTime = std::chrono::steady_clock::now();
-        const auto elapsed = std::chrono::duration<double>(currentFrameTime - previousFrameTime).count();
+
+        // 计算两帧之间经过的秒数。
+        const auto elapsed =
+            std::chrono::duration<double>(currentFrameTime - previousFrameTime).count();
         previousFrameTime = currentFrameTime;
         if (elapsed > 0.0) {
+            // 用当前帧间隔计算瞬时 FPS。
             const auto instantFps = 1.0 / elapsed;
+
+            // 首帧直接使用瞬时值，后续使用 90% 历史值 + 10% 新值平滑。
             fps = fps == 0.0 ? instantFps : fps * 0.9 + instantFps * 0.1;
         }
 
-        const auto motion = detectMotion(frame, backgroundGray);
-        processed = processFrame(frame, mode, motion);
-        drawOverlay(processed, fps, mode, formatTimestamp(std::chrono::system_clock::now()),
-                    motion.regions.size());
+        // 先更新运动检测背景，并得到当前帧的运动区域。
+        const auto motion = miniav::vision::detectMotion(frame, backgroundGray);
+
+        // 根据当前显示模式得到待显示图像。
+        processed = miniav::vision::processFrame(frame, mode, motion);
+
+        // 在处理结果上叠加 FPS、时间戳、当前模式和快捷键提示。
+        miniav::ui::drawOverlay(processed, fps, mode,
+                                miniav::ui::formatTimestamp(
+                                    std::chrono::system_clock::now()),
+                                motion.regions.size());
+
+        // 把最终画面显示到窗口。
         cv::imshow(kWindowName, processed);
 
+        // waitKey 既负责处理窗口事件，也负责读取键盘输入。
         const int key = cv::waitKey(1) & 0xFF;
         if (key == 27) {
+            // ESC 键退出主循环。
             break;
         }
 
         switch (key) {
         case '1':
-            mode = ViewMode::Original;
+            // 原始彩色画面。
+            mode = miniav::vision::ViewMode::Original;
             break;
         case '2':
-            mode = ViewMode::Gray;
+            // 灰度画面。
+            mode = miniav::vision::ViewMode::Gray;
             break;
         case '3':
-            mode = ViewMode::Edges;
+            // Canny 边缘画面。
+            mode = miniav::vision::ViewMode::Edges;
             break;
         case '4':
-            mode = ViewMode::Threshold;
+            // 固定阈值二值画面。
+            mode = miniav::vision::ViewMode::Threshold;
             break;
         case '5':
-            mode = ViewMode::Motion;
+            // 运动区域标记画面。
+            mode = miniav::vision::ViewMode::Motion;
             break;
         case 's':
         case 'S': {
-            const auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count();
-            const auto fileName = std::filesystem::path("captures") /
-                ("frame_" + std::to_string(milliseconds) + ".jpg");
-            if (cv::imwrite(fileName.string(), processed)) {
-                std::cout << "Saved: " << fileName.string() << '\n';
+            // 截图使用当前已经处理并叠加信息的画面。
+            std::filesystem::path savedPath;
+            if (miniav::io::saveSnapshot(processed, captureDirectory, savedPath, error)) {
+                std::cout << "Saved: " << savedPath.string() << '\n';
+            } else {
+                std::cerr << "Could not save snapshot: " << error << '\n';
             }
             break;
         }
         default:
+            // 其他键不改变当前模式。
             break;
         }
     }
 
+    // 显式释放摄像头资源。
     camera.release();
+
+    // 关闭 OpenCV 创建的所有窗口。
     cv::destroyAllWindows();
+
+    // 正常结束程序。
     return 0;
 }
