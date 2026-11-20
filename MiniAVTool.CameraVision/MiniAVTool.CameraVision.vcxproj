@@ -19,22 +19,26 @@
     <ProjectGuid>{7B6A7D5D-6E56-4D0D-9A0D-4D4C0D9A7C21}</ProjectGuid>
     <RootNamespace>MiniAVToolCameraVision</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <!-- 当前机器上 OpenCV 安装的根目录；推荐使用 CMake 作为可移植构建入口。 -->
-    <OpenCVRoot>E:\opencv\opencv\build</OpenCVRoot>
+    <!-- OpenCV 安装根目录。这里只提供本机默认值；
+         其它机器请创建 opencv.local.props（已加入 .gitignore）覆盖此值，
+         避免不同机器的 OpenCV 路径互相冲突。 -->
+    <OpenCVRoot>D:\opencv\opencv\build</OpenCVRoot>
   </PropertyGroup>
+  <!-- 各机器私有的 OpenCV 路径覆盖文件，不存在时使用上面的默认值。 -->
+  <Import Project="opencv.local.props" Condition="Exists('opencv.local.props')" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <!-- Debug 生成 Windows 控制台程序，并保留调试库设置。 -->
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <!-- Release 生成经过优化的 Windows 控制台程序。 -->
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>

@@ -16,6 +16,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     private readonly IDialogService _dialogService;
     private readonly ILiveStreamingService _liveStreamingService;
     private readonly ILivePlaybackService _livePlaybackService;
+    private readonly IRtcPlaybackService? _rtcPlaybackService;
     private readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -33,7 +34,10 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     private int _frameCount = 30;
     private bool _isBusy;
 
+    private LiveStreamProtocol _streamProtocol = LiveStreamProtocol.Rtmp;
     private string _rtmpUrl = "rtmp://111.229.145.58/live/test";
+    private string _rtcUrl = "http://111.229.145.58:1985/rtc/v1/whip/?app=live&stream=test";
+    private string _rtcAuthorizationToken = string.Empty;
     private LiveVideoSourceMode _videoSourceMode = LiveVideoSourceMode.SharedVideo;
     private string _cameraDeviceName = string.Empty;
     private bool _includeAudio;
@@ -45,11 +49,17 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     private string _liveStatusText = "直播未开始";
     private string _liveLogText = string.Empty;
     private bool _isLiveStreaming;
-    private string _playbackUrl = "rtmp://111.229.145.58/live/test";
+    private LiveStreamProtocol? _activeStreamProtocol;
+    private bool _rtcTransportFailureLogged;
+    private LivePlaybackMode _playbackMode = LivePlaybackMode.Rtmp;
+    private string _rtmpPlaybackUrl = "rtmp://111.229.145.58/live/test";
+    private string _rtcPlaybackUrl = "http://111.229.145.58:1985/rtc/v1/whep/?app=live&stream=test";
+    private string _rtcPlaybackAuthorizationToken = string.Empty;
     private string _playbackStatusText = "未播放";
     private string _playbackLogText = string.Empty;
     private bool _isPlaybackActive;
     private bool _hasPlaybackStarted;
+    private LivePlaybackMode? _activePlaybackMode;
 
     private readonly RelayCommand _chooseVideoCommand;
     private readonly RelayCommand _chooseOutputCommand;
@@ -82,15 +92,22 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         IBackendService backendService,
         IDialogService dialogService,
         ILiveStreamingService liveStreamingService,
-        ILivePlaybackService livePlaybackService)
+        ILivePlaybackService livePlaybackService,
+        IRtcPlaybackService? rtcPlaybackService = null)
     {
         _backendService = backendService;
         _dialogService = dialogService;
         _liveStreamingService = liveStreamingService;
         _livePlaybackService = livePlaybackService;
+        _rtcPlaybackService = rtcPlaybackService;
         _liveStreamingService.StreamExited += OnLiveStreamExited;
         _livePlaybackService.StatusChanged += OnPlaybackStatusChanged;
         _livePlaybackService.LogReceived += OnPlaybackLogReceived;
+        if (_rtcPlaybackService != null)
+        {
+            _rtcPlaybackService.StatusChanged += OnPlaybackStatusChanged;
+            _rtcPlaybackService.LogReceived += OnPlaybackLogReceived;
+        }
 
         _outputPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "MiniAVDecoderOutput");
         FramePreviews = new ObservableCollection<ImageSource>();
@@ -110,9 +127,12 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         _stopPlaybackCommand = new AsyncRelayCommand(StopPlaybackAsync, CanStopPlayback);
 
         AppendLog("媒体工具已就绪。");
-        AppendLiveLog("直播工具已就绪，请先确认服务器上的 SRS 或 RTMP 服务已启动。");
+        AppendLiveLog("直播工具已就绪，可在 RTMP 与 RTC (SRS bridge) 之间切换。");
+        AppendLiveLog("RTMP 使用 rtmp:// 地址；RTC 使用媒体服务器的 http(s):// WHIP 地址。");
+        AppendLiveLog("RTC 推流经 SRS 的 RTMP 接入自动转换为 WebRTC；RTC 观看仍需 UDP 8000。");
         AppendLiveLog("程序将使用项目自带的 FFmpeg：Tools\\ffmpeg\\ffmpeg.exe。");
         AppendPlaybackLog("观看直播功能已就绪。");
+        AppendPlaybackLog("RTMP 使用 LibVLC 播放；RTC 使用 WebView2 和 WHEP 播放。");
         OutputPath = _outputPath;
     }
 
@@ -170,17 +190,84 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         }
     }
 
-    public string RtmpUrl
+    public LiveStreamProtocol StreamProtocol
     {
-        get => _rtmpUrl;
+        get => _streamProtocol;
         set
         {
-            if (SetProperty(ref _rtmpUrl, value))
+            if (SetProperty(ref _streamProtocol, value))
             {
+                RaisePropertyChanged(nameof(IsRtmpProtocol));
+                RaisePropertyChanged(nameof(IsRtcProtocol));
+                RaisePropertyChanged(nameof(StreamUrl));
+                RaisePropertyChanged(nameof(StreamAddressLabel));
+                RaisePropertyChanged(nameof(StreamAddressHint));
                 RaiseCommandStates();
             }
         }
     }
+
+    public bool IsRtmpProtocol
+    {
+        get => StreamProtocol == LiveStreamProtocol.Rtmp;
+        set
+        {
+            if (value)
+            {
+                StreamProtocol = LiveStreamProtocol.Rtmp;
+            }
+        }
+    }
+
+    public bool IsRtcProtocol
+    {
+        get => StreamProtocol == LiveStreamProtocol.Rtc;
+        set
+        {
+            if (value)
+            {
+                StreamProtocol = LiveStreamProtocol.Rtc;
+            }
+        }
+    }
+
+    public string StreamUrl
+    {
+        get => StreamProtocol == LiveStreamProtocol.Rtc ? _rtcUrl : _rtmpUrl;
+        set
+        {
+            var currentValue = StreamUrl;
+            if (string.Equals(currentValue, value, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (StreamProtocol == LiveStreamProtocol.Rtc)
+            {
+                _rtcUrl = value;
+            }
+            else
+            {
+                _rtmpUrl = value;
+            }
+
+            RaisePropertyChanged(nameof(StreamUrl));
+            RaiseCommandStates();
+        }
+    }
+
+    public string RtcAuthorizationToken
+    {
+        get => _rtcAuthorizationToken;
+        set => SetProperty(ref _rtcAuthorizationToken, value);
+    }
+
+    public string StreamAddressLabel =>
+        StreamProtocol == LiveStreamProtocol.Rtc ? "RTC WHIP 地址" : "RTMP 推流地址";
+
+    public string StreamAddressHint => StreamProtocol == LiveStreamProtocol.Rtc
+        ? "例如 http://127.0.0.1:1985/rtc/v1/whip/?app=live&stream=test"
+        : "例如 rtmp://127.0.0.1/live/test";
 
     public LiveVideoSourceMode VideoSourceMode
     {
@@ -338,17 +425,85 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         }
     }
 
-    public string PlaybackUrl
+    public LivePlaybackMode PlaybackMode
     {
-        get => _playbackUrl;
+        get => _playbackMode;
         set
         {
-            if (SetProperty(ref _playbackUrl, value))
+            if (SetProperty(ref _playbackMode, value))
             {
+                RaisePropertyChanged(nameof(IsRtmpPlayback));
+                RaisePropertyChanged(nameof(IsRtcPlayback));
+                RaisePropertyChanged(nameof(PlaybackUrl));
+                RaisePropertyChanged(nameof(PlaybackUrlLabel));
+                RaisePropertyChanged(nameof(PlaybackUrlHint));
                 RaiseCommandStates();
             }
         }
     }
+
+    public bool IsRtmpPlayback
+    {
+        get => PlaybackMode == LivePlaybackMode.Rtmp;
+        set
+        {
+            if (value)
+            {
+                PlaybackMode = LivePlaybackMode.Rtmp;
+            }
+        }
+    }
+
+    public bool IsRtcPlayback
+    {
+        get => PlaybackMode == LivePlaybackMode.Rtc;
+        set
+        {
+            if (value)
+            {
+                PlaybackMode = LivePlaybackMode.Rtc;
+            }
+        }
+    }
+
+    public bool CanChangePlaybackProtocol => !IsPlaybackActive;
+
+    public string PlaybackUrl
+    {
+        get => PlaybackMode == LivePlaybackMode.Rtc ? _rtcPlaybackUrl : _rtmpPlaybackUrl;
+        set
+        {
+            if (string.Equals(PlaybackUrl, value, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (PlaybackMode == LivePlaybackMode.Rtc)
+            {
+                _rtcPlaybackUrl = value;
+            }
+            else
+            {
+                _rtmpPlaybackUrl = value;
+            }
+
+            RaisePropertyChanged(nameof(PlaybackUrl));
+            RaiseCommandStates();
+        }
+    }
+
+    public string RtcPlaybackAuthorizationToken
+    {
+        get => _rtcPlaybackAuthorizationToken;
+        set => SetProperty(ref _rtcPlaybackAuthorizationToken, value);
+    }
+
+    public string PlaybackUrlLabel =>
+        PlaybackMode == LivePlaybackMode.Rtc ? "WHEP 地址" : "播放地址";
+
+    public string PlaybackUrlHint => PlaybackMode == LivePlaybackMode.Rtc
+        ? "例如 http://127.0.0.1:1985/rtc/v1/whep/?app=live&stream=test"
+        : "支持 rtmp://、http://、https:// 直播地址";
 
     public string PlaybackStatusText
     {
@@ -369,6 +524,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         {
             if (SetProperty(ref _isPlaybackActive, value))
             {
+                RaisePropertyChanged(nameof(CanChangePlaybackProtocol));
                 RaiseCommandStates();
             }
         }
@@ -394,6 +550,13 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         _liveStreamingService.StreamExited -= OnLiveStreamExited;
         _livePlaybackService.StatusChanged -= OnPlaybackStatusChanged;
         _livePlaybackService.LogReceived -= OnPlaybackLogReceived;
+        if (_rtcPlaybackService != null)
+        {
+            _rtcPlaybackService.StatusChanged -= OnPlaybackStatusChanged;
+            _rtcPlaybackService.LogReceived -= OnPlaybackLogReceived;
+            _rtcPlaybackService.Dispose();
+        }
+
         _liveStreamingService.Dispose();
         _livePlaybackService.Dispose();
     }
@@ -437,11 +600,12 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     private bool CanOpenOutput() => !IsBusy && !string.IsNullOrWhiteSpace(OutputPath);
     private bool CanRunBackend() => !IsBusy && !IsLiveStreaming && File.Exists(InputPath);
     private bool CanStartLive() => !IsLiveStreaming
-        && !string.IsNullOrWhiteSpace(RtmpUrl)
+        && !string.IsNullOrWhiteSpace(StreamUrl)
         && (!IsCameraMode || !string.IsNullOrWhiteSpace(CameraDeviceName));
     private bool CanStopLive() => IsLiveStreaming;
     private bool CanListLiveDevices() => !IsLiveStreaming;
-    private bool CanStartPlayback() => !IsPlaybackActive && IsSupportedPlaybackUrl(PlaybackUrl);
+    private bool CanStartPlayback() =>
+        !IsPlaybackActive && IsSupportedPlaybackUrl(PlaybackUrl, PlaybackMode);
     private bool CanStopPlayback() => IsPlaybackActive;
 
     private async Task ExecuteBackendAsync(string command, bool refreshFrames)
@@ -492,15 +656,19 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
 
         try
         {
+            _activeStreamProtocol = StreamProtocol;
+            _rtcTransportFailureLogged = false;
             IsLiveStreaming = true;
-            LiveStatusText = "正在启动直播...";
+            var protocolName = GetProtocolDisplayName();
+            LiveStatusText = $"正在启动 {protocolName} 推流...";
             await _liveStreamingService.StartAsync(BuildLiveOptions(), AppendLiveLogThreadSafe);
-            LiveStatusText = "直播中";
+            LiveStatusText = $"{protocolName} 推流中";
         }
         catch (Exception ex)
         {
+            _activeStreamProtocol = null;
             IsLiveStreaming = false;
-            LiveStatusText = "直播启动失败";
+            LiveStatusText = "推流启动失败";
             AppendLiveLog(ex.Message);
         }
     }
@@ -512,6 +680,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
             LiveStatusText = "正在停止直播...";
             await _liveStreamingService.StopAsync();
             IsLiveStreaming = false;
+            _activeStreamProtocol = null;
             LiveStatusText = "直播已停止";
             AppendLiveLog("直播已停止。");
         }
@@ -564,13 +733,33 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
 
         try
         {
+            await StopPlaybackEnginesAsync();
+            _activePlaybackMode = PlaybackMode;
             IsPlaybackActive = true;
             _hasPlaybackStarted = false;
-            PlaybackStatusText = "正在连接...";
-            await _livePlaybackService.PlayAsync(PlaybackUrl);
+            PlaybackStatusText = PlaybackMode == LivePlaybackMode.Rtc
+                ? "正在建立 RTC 连接..."
+                : "正在连接...";
+
+            if (PlaybackMode == LivePlaybackMode.Rtc)
+            {
+                if (_rtcPlaybackService == null)
+                {
+                    throw new InvalidOperationException("RTC 播放服务尚未初始化。");
+                }
+
+                await _rtcPlaybackService.PlayAsync(
+                    PlaybackUrl,
+                    RtcPlaybackAuthorizationToken);
+            }
+            else
+            {
+                await _livePlaybackService.PlayAsync(PlaybackUrl);
+            }
         }
         catch (Exception ex)
         {
+            _activePlaybackMode = null;
             IsPlaybackActive = false;
             _hasPlaybackStarted = false;
             PlaybackStatusText = "播放启动失败";
@@ -583,8 +772,9 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         try
         {
             PlaybackStatusText = "正在停止...";
-            await _livePlaybackService.StopAsync();
+            await StopPlaybackEnginesAsync();
             IsPlaybackActive = false;
+            _activePlaybackMode = null;
             _hasPlaybackStarted = false;
             PlaybackStatusText = "已停止";
             AppendPlaybackLog("已停止播放。");
@@ -593,6 +783,15 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         {
             PlaybackStatusText = "停止失败";
             AppendPlaybackLog(ex.Message);
+        }
+    }
+
+    private async Task StopPlaybackEnginesAsync()
+    {
+        await _livePlaybackService.StopAsync();
+        if (_rtcPlaybackService != null)
+        {
+            await _rtcPlaybackService.StopAsync();
         }
     }
 
@@ -615,9 +814,11 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
 
     private bool ValidateLiveSettings()
     {
-        if (string.IsNullOrWhiteSpace(RtmpUrl) || !RtmpUrl.Trim().StartsWith("rtmp://", StringComparison.OrdinalIgnoreCase))
+        if (!IsSupportedPushUrl(StreamUrl, StreamProtocol))
         {
-            AppendLiveLog("请输入 RTMP 推流地址，例如 rtmp://127.0.0.1/live/test。");
+            AppendLiveLog(StreamProtocol == LiveStreamProtocol.Rtc
+                ? "请输入 RTC (WHIP) 地址，例如 http://127.0.0.1:1985/rtc/v1/whip/?app=live&stream=test。"
+                : "请输入 RTMP 推流地址，例如 rtmp://127.0.0.1/live/test。");
             return false;
         }
 
@@ -636,30 +837,57 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         return true;
     }
 
+    private static bool IsSupportedPushUrl(string? url, LiveStreamProtocol protocol)
+    {
+        if (!Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        return protocol == LiveStreamProtocol.Rtc
+            ? uri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase)
+                || uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase)
+            : uri.Scheme.Equals("rtmp", StringComparison.OrdinalIgnoreCase)
+                || uri.Scheme.Equals("rtmps", StringComparison.OrdinalIgnoreCase);
+    }
+
     private bool ValidatePlaybackSettings()
     {
-        if (!IsSupportedPlaybackUrl(PlaybackUrl))
+        if (!IsSupportedPlaybackUrl(PlaybackUrl, PlaybackMode))
         {
-            AppendPlaybackLog("请输入有效的直播地址，例如 rtmp://111.229.145.58/live/test。");
+            AppendPlaybackLog(PlaybackMode == LivePlaybackMode.Rtc
+                ? "请输入有效的 WHEP 地址，例如 http://111.229.145.58:1985/rtc/v1/whep/?app=live&stream=test。"
+                : "请输入有效的直播地址，例如 rtmp://111.229.145.58/live/test。");
             return false;
         }
 
         return true;
     }
 
-    private static bool IsSupportedPlaybackUrl(string? url)
+    private static bool IsSupportedPlaybackUrl(string? url, LivePlaybackMode mode)
     {
-        return Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var uri)
-            && (uri.Scheme.Equals("rtmp", StringComparison.OrdinalIgnoreCase)
-                || uri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase)
-                || uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase));
+        if (!Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        return mode == LivePlaybackMode.Rtc
+            ? uri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase)
+                || uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase)
+            : uri.Scheme.Equals("rtmp", StringComparison.OrdinalIgnoreCase)
+                || uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase)
+                || uri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase);
     }
 
     private LiveStreamOptions BuildLiveOptions()
     {
         return new LiveStreamOptions
         {
-            RtmpUrl = RtmpUrl,
+            Protocol = StreamProtocol,
+            PushUrl = StreamUrl,
+            AuthorizationToken = StreamProtocol == LiveStreamProtocol.Rtc
+                ? RtcAuthorizationToken
+                : string.Empty,
             VideoSourceMode = VideoSourceMode,
             CameraDeviceName = CameraDeviceName,
             IncludeAudio = IncludeAudio,
@@ -668,6 +896,18 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
             VideoSize = LiveVideoSize,
             VideoBitrateKbps = LiveVideoBitrateKbps
         };
+    }
+
+    private string GetProtocolDisplayName()
+    {
+        if (StreamProtocol != LiveStreamProtocol.Rtc)
+        {
+            return "RTMP";
+        }
+
+        return StreamUrl.Contains("/rtc/v1/whip", StringComparison.OrdinalIgnoreCase)
+            ? "RTC (SRS bridge)"
+            : "RTC (WHIP)";
     }
 
     private static string GetCommandDisplayName(string command)
@@ -798,6 +1038,21 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         }
 
         _liveLogBuilder.AppendLine($"[{DateTime.Now:HH:mm:ss}] {message.TrimEnd()}");
+
+        if (_activeStreamProtocol == LiveStreamProtocol.Rtc
+            && !_rtcTransportFailureLogged
+            && message.Contains("DTLS handshake timeout", StringComparison.OrdinalIgnoreCase))
+        {
+            _rtcTransportFailureLogged = true;
+            _liveLogBuilder.AppendLine();
+            _liveLogBuilder.AppendLine("=== RTC 连接诊断 ===");
+            _liveLogBuilder.AppendLine(
+                "WHIP 建流接口可访问，但 WebRTC 媒体握手超时。请确认媒体服务器已放行 UDP 8000，" +
+                "Docker 运行时包含 -p 8000:8000/udp（Compose 中为 \"8000:8000/udp\"），" +
+                "云服务器安全组也允许入站 UDP 8000，修改后重启 SRS 容器。");
+            LiveStatusText = "RTC 握手失败：请放行 UDP 8000";
+        }
+
         LiveLogText = _liveLogBuilder.ToString();
     }
 
@@ -824,7 +1079,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
                 case LivePlaybackState.Buffering:
                 case LivePlaybackState.Paused:
                     IsPlaybackActive = true;
-                    if (!_hasPlaybackStarted && !_livePlaybackService.IsPlaying)
+                    if (!_hasPlaybackStarted && !IsActivePlaybackEnginePlaying())
                     {
                         PlaybackStatusText = e.Message;
                     }
@@ -835,10 +1090,18 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
                 case LivePlaybackState.Error:
                     _hasPlaybackStarted = false;
                     IsPlaybackActive = false;
+                    _activePlaybackMode = null;
                     PlaybackStatusText = e.Message;
                     break;
             }
         });
+    }
+
+    private bool IsActivePlaybackEnginePlaying()
+    {
+        return _activePlaybackMode == LivePlaybackMode.Rtc
+            ? _rtcPlaybackService?.IsPlaying == true
+            : _livePlaybackService.IsPlaying;
     }
 
     private void OnPlaybackLogReceived(object? sender, string message)
@@ -861,8 +1124,14 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     {
         RunOnUiThread(() =>
         {
+            var failedProtocol = _activeStreamProtocol;
             IsLiveStreaming = false;
-            LiveStatusText = exitCode == 0 ? "直播已停止" : $"FFmpeg 已退出：{exitCode}";
+            LiveStatusText = exitCode == 0
+                ? "推流已停止"
+                : failedProtocol == LiveStreamProtocol.Rtc
+                    && (_rtcTransportFailureLogged || exitCode == -138)
+                    ? "RTC 握手失败：请放行 UDP 8000"
+                    : $"FFmpeg 已退出：{exitCode}";
             AppendLiveLog($"FFmpeg 进程退出，退出码：{exitCode}。");
         });
     }

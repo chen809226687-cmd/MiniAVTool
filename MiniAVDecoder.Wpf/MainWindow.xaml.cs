@@ -9,6 +9,7 @@ namespace MiniAVDecoder.Wpf;
 public partial class MainWindow : Window
 {
     private readonly ILivePlaybackService _playbackService;
+    private readonly IRtcPlaybackService _rtcPlaybackService;
     private WindowState _normalWindowState;
     private WindowStyle _normalWindowStyle;
     private ResizeMode _normalResizeMode;
@@ -29,13 +30,16 @@ public partial class MainWindow : Window
 
         // 播放器对象由服务管理，VideoView 只负责把视频画面嵌入当前 Tab。
         _playbackService = new LibVlcPlaybackService();
+        _rtcPlaybackService = new WebRtcPlaybackService(RtcVideoView);
+        _rtcPlaybackService.FullscreenToggleRequested += OnRtcFullscreenToggleRequested;
         LiveVideoView.MediaPlayer = _playbackService.MediaPlayer;
 
         DataContext = new MainViewModel(
             new BackendService(),
             new DialogService(),
             new LiveStreamingService(),
-            _playbackService);
+            _playbackService,
+            _rtcPlaybackService);
     }
 
     private void OnToggleFullscreenButtonClick(object sender, RoutedEventArgs e)
@@ -47,6 +51,18 @@ public partial class MainWindow : Window
         }
 
         EnterFullscreen();
+    }
+
+    private void OnRtcFullscreenToggleRequested(object? sender, EventArgs e)
+    {
+        if (_isFullscreen)
+        {
+            ExitFullscreen();
+        }
+        else
+        {
+            EnterFullscreen();
+        }
     }
 
     private void OnPlaybackVideoMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
@@ -200,6 +216,7 @@ public partial class MainWindow : Window
             disposable.Dispose();
         }
 
+        RtcVideoView.Dispose();
         base.OnClosed(e);
     }
 
@@ -218,6 +235,12 @@ public partial class MainWindow : Window
             disposable.Dispose();
         }
 
+        RtcVideoView.Dispose();
         DataContext = null;
+    }
+
+    private void Button_Click(object sender, RoutedEventArgs e)
+    {
+
     }
 }

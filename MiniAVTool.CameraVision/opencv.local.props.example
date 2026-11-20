@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  各机器私有的 OpenCV 路径配置模板。
+
+  使用方法：复制本文件为 opencv.local.props（该文件已被 .gitignore 忽略），
+  并把下面的 OpenCVRoot 改成当前机器上 OpenCV 的实际安装根目录。
+
+  该目录需要包含 include、x64\vc16\lib 与 x64\vc16\bin，
+  例如 OpenCV 官方 Windows 预编译包解压后的 ...\opencv\build。
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <OpenCVRoot>C:\path\to\opencv\build</OpenCVRoot>
+  </PropertyGroup>
+</Project>

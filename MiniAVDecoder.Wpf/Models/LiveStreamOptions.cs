@@ -6,9 +6,17 @@ public enum LiveVideoSourceMode
     SharedVideo
 }
 
+public enum LiveStreamProtocol
+{
+    Rtmp,
+    Rtc
+}
+
 public sealed class LiveStreamOptions
 {
-    public string RtmpUrl { get; init; } = string.Empty;
+    public LiveStreamProtocol Protocol { get; init; } = LiveStreamProtocol.Rtmp;
+    public string PushUrl { get; init; } = string.Empty;
+    public string AuthorizationToken { get; init; } = string.Empty;
     public LiveVideoSourceMode VideoSourceMode { get; init; } = LiveVideoSourceMode.SharedVideo;
     public string CameraDeviceName { get; init; } = string.Empty;
     public bool IncludeAudio { get; init; }

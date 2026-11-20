@@ -10,6 +10,8 @@ public sealed class LiveStreamingService : ILiveStreamingService, IDisposable
 {
     private const int GracefulExitTimeoutMilliseconds = 1500;
     private const int ForcedExitTimeoutMilliseconds = 3000;
+    private static readonly Lazy<HardwareEncoder?> PreferredHardwareEncoder =
+        new(DetectHardwareEncoder);
 
     private readonly object _syncRoot = new();
     private Process? _process;
@@ -67,7 +69,11 @@ public sealed class LiveStreamingService : ILiveStreamingService, IDisposable
             _processJob = processJob;
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
-            onOutput("FFmpeg 已启动，正在推流到 " + options.RtmpUrl);
+            var output = ResolvePushOutput(options);
+            var protocolName = GetProtocolDisplayName(options);
+            var encoderName = PreferredHardwareEncoder.Value?.Codec ?? "libx264";
+            onOutput($"FFmpeg 已启动，正在通过 {protocolName} 推流到 {output.Url}");
+            onOutput($"视频编码器：{encoderName}。");
         }
 
         return Task.CompletedTask;
@@ -198,6 +204,11 @@ public sealed class LiveStreamingService : ILiveStreamingService, IDisposable
         var frameRate = Math.Clamp(options.FrameRate, 1, 60);
         var bitrate = Math.Clamp(options.VideoBitrateKbps, 300, 20000);
         var gop = Math.Max(frameRate * 2, 30);
+        var outputSize = ParseVideoSize(options.VideoSize);
+        var output = ResolvePushOutput(options);
+        var hardwareEncoder = PreferredHardwareEncoder.Value;
+        var hardwarePixelFormat = hardwareEncoder?.Codec == "h264_amf" ? "nv12" : "yuv420p";
+        var includeAudio = options.IncludeAudio && !string.IsNullOrWhiteSpace(options.AudioDeviceName);
 
         yield return "-hide_banner";
         yield return "-loglevel";
@@ -205,47 +216,114 @@ public sealed class LiveStreamingService : ILiveStreamingService, IDisposable
 
         if (options.VideoSourceMode == LiveVideoSourceMode.Camera)
         {
+            var captureRate = Math.Min(frameRate, 30);
+            var captureSize = outputSize.Width >= 1920 || outputSize.Height >= 1080
+                ? (Width: 1920, Height: 1080)
+                : (Width: 1280, Height: 720);
+
             yield return "-f";
             yield return "dshow";
             yield return "-framerate";
-            yield return frameRate.ToString();
+            yield return captureRate.ToString();
+            yield return "-video_size";
+            yield return $"{captureSize.Width}x{captureSize.Height}";
+            yield return "-vcodec";
+            yield return "mjpeg";
+            yield return "-rtbufsize";
+            yield return "256M";
             yield return "-i";
             yield return BuildDirectShowInput(options);
+
+            yield return "-vf";
+            yield return BuildVideoFilter(
+                outputSize,
+                hardwareEncoder == null ? "yuv420p" : hardwarePixelFormat);
         }
         else
         {
-            yield return "-f";
-            yield return "gdigrab";
-            yield return "-framerate";
-            yield return frameRate.ToString();
-            yield return "-draw_mouse";
-            yield return "1";
-            yield return "-i";
-            yield return "desktop";
+            // Desktop Duplication 只抓主显示器，避免每次把 7680x2160 的双屏桌面
+            // 拷贝到系统内存后再由 CPU 缩小。
+            yield return "-filter_complex";
+            yield return
+                $"ddagrab=output_idx=0:draw_mouse=1:framerate={frameRate}," +
+                "hwdownload,format=bgra," +
+                $"scale={outputSize.Width}:{outputSize.Height}:force_original_aspect_ratio=decrease:flags=fast_bilinear," +
+                $"pad={outputSize.Width}:{outputSize.Height}:(ow-iw)/2:(oh-ih)/2:color=black," +
+                $"format={(hardwareEncoder == null ? "yuv420p" : hardwarePixelFormat)}[vout]";
 
-            if (options.IncludeAudio && !string.IsNullOrWhiteSpace(options.AudioDeviceName))
+            if (includeAudio)
             {
                 yield return "-f";
                 yield return "dshow";
+                yield return "-rtbufsize";
+                yield return "64M";
                 yield return "-i";
                 yield return "audio=" + options.AudioDeviceName.Trim();
             }
+
+            yield return "-map";
+            yield return "[vout]";
+            if (includeAudio)
+            {
+                yield return "-map";
+                yield return "0:a:0";
+            }
         }
 
-        // 分辨率是推流输出尺寸，而不是桌面或摄像头的采集尺寸。
-        // 通过等比缩放和补黑边避免不同屏幕比例下画面变形。
-        var outputSize = ParseVideoSize(options.VideoSize);
-        yield return "-vf";
-        yield return $"scale={outputSize.Width}:{outputSize.Height}:force_original_aspect_ratio=decrease," +
-                     $"pad={outputSize.Width}:{outputSize.Height}:(ow-iw)/2:(oh-ih)/2:color=black";
-        yield return "-c:v";
-        yield return "libx264";
-        yield return "-preset";
-        yield return "veryfast";
-        yield return "-tune";
-        yield return "zerolatency";
-        yield return "-pix_fmt";
-        yield return "yuv420p";
+        if (hardwareEncoder == null)
+        {
+            yield return "-c:v";
+            yield return "libx264";
+            yield return "-preset";
+            yield return "veryfast";
+            yield return "-tune";
+            yield return "zerolatency";
+            if (options.Protocol == LiveStreamProtocol.Rtc)
+            {
+                yield return "-profile:v";
+                yield return "baseline";
+                yield return "-bf";
+                yield return "0";
+            }
+
+            yield return "-pix_fmt";
+            yield return "yuv420p";
+        }
+        else
+        {
+            yield return "-c:v";
+            yield return hardwareEncoder.Codec;
+            if (hardwareEncoder.Codec == "h264_amf")
+            {
+                yield return "-usage";
+                yield return "lowlatency";
+                yield return "-quality";
+                yield return "speed";
+                yield return "-rc";
+                yield return "cbr";
+                yield return "-max_b_frames";
+                yield return "0";
+                yield return "-profile:v";
+                yield return "constrained_baseline";
+            }
+            else
+            {
+                yield return "-preset";
+                yield return "p1";
+                yield return "-tune";
+                yield return "ll";
+                yield return "-rc";
+                yield return "cbr";
+                yield return "-bf";
+                yield return "0";
+                yield return "-profile:v";
+                yield return "baseline";
+            }
+
+            yield return "-pix_fmt";
+            yield return hardwarePixelFormat;
+        }
+
         yield return "-b:v";
         yield return bitrate + "k";
         yield return "-maxrate";
@@ -254,24 +332,209 @@ public sealed class LiveStreamingService : ILiveStreamingService, IDisposable
         yield return bitrate * 2 + "k";
         yield return "-g";
         yield return gop.ToString();
+        yield return "-fps_mode";
+        yield return "cfr";
 
-        if (options.IncludeAudio && !string.IsNullOrWhiteSpace(options.AudioDeviceName))
+        if (includeAudio)
         {
             yield return "-c:a";
-            yield return "aac";
+            yield return output.UsesDirectWhip ? "libopus" : "aac";
             yield return "-b:a";
             yield return "128k";
             yield return "-ar";
-            yield return "44100";
+            yield return output.UsesDirectWhip ? "48000" : "44100";
+
+            if (output.UsesDirectWhip)
+            {
+                yield return "-ac";
+                yield return "2";
+            }
         }
         else
         {
             yield return "-an";
         }
 
+        if (output.UsesDirectWhip)
+        {
+            if (!string.IsNullOrWhiteSpace(options.AuthorizationToken))
+            {
+                yield return "-authorization";
+                yield return NormalizeAuthorizationToken(options.AuthorizationToken);
+            }
+
+            yield return "-handshake_timeout";
+            yield return "10000";
+        }
+
         yield return "-f";
-        yield return "flv";
-        yield return options.RtmpUrl.Trim();
+        yield return output.ContainerFormat;
+        yield return output.Url;
+    }
+
+    private static string BuildVideoFilter((int Width, int Height) outputSize, string pixelFormat)
+    {
+        return
+            $"scale={outputSize.Width}:{outputSize.Height}:force_original_aspect_ratio=decrease:flags=fast_bilinear," +
+            $"pad={outputSize.Width}:{outputSize.Height}:(ow-iw)/2:(oh-ih)/2:color=black," +
+            $"format={pixelFormat}";
+    }
+
+    private static PushOutput ResolvePushOutput(LiveStreamOptions options)
+    {
+        if (options.Protocol == LiveStreamProtocol.Rtc
+            && TryBuildSrsRtmpUrl(options, out var rtmpUrl))
+        {
+            return new PushOutput(rtmpUrl, "flv", UsesDirectWhip: false, UsesSrsRtcBridge: true);
+        }
+
+        return options.Protocol == LiveStreamProtocol.Rtc
+            ? new PushOutput(options.PushUrl.Trim(), "whip", UsesDirectWhip: true, UsesSrsRtcBridge: false)
+            : new PushOutput(options.PushUrl.Trim(), "flv", UsesDirectWhip: false, UsesSrsRtcBridge: false);
+    }
+
+    private static bool TryBuildSrsRtmpUrl(LiveStreamOptions options, out string rtmpUrl)
+    {
+        rtmpUrl = string.Empty;
+        if (!Uri.TryCreate(options.PushUrl?.Trim(), UriKind.Absolute, out var whpUri)
+            || !whpUri.AbsolutePath.Contains("/rtc/v1/whip", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var app = GetQueryParameter(whpUri, "app");
+        var stream = GetQueryParameter(whpUri, "stream");
+        if (string.IsNullOrWhiteSpace(app) || string.IsNullOrWhiteSpace(stream))
+        {
+            return false;
+        }
+
+        var extraQuery = new List<string>();
+        foreach (var pair in whpUri.Query.TrimStart('?')
+                     .Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var separator = pair.IndexOf('=');
+            var key = separator >= 0 ? pair[..separator] : pair;
+            if (!string.Equals(Uri.UnescapeDataString(key), "app", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(Uri.UnescapeDataString(key), "stream", StringComparison.OrdinalIgnoreCase))
+            {
+                extraQuery.Add(pair);
+            }
+        }
+
+        var builder = new UriBuilder(whpUri)
+        {
+            Scheme = "rtmp",
+            Port = 1935,
+            Path = $"/{Uri.EscapeDataString(app)}/{Uri.EscapeDataString(stream)}",
+            Query = string.Join("&", extraQuery)
+        };
+        rtmpUrl = builder.Uri.AbsoluteUri;
+        return true;
+    }
+
+    private static string? GetQueryParameter(Uri uri, string name)
+    {
+        foreach (var pair in uri.Query.TrimStart('?')
+                     .Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var separator = pair.IndexOf('=');
+            var key = separator >= 0 ? pair[..separator] : pair;
+            if (!string.Equals(
+                    Uri.UnescapeDataString(key),
+                    name,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            return separator >= 0
+                ? Uri.UnescapeDataString(pair[(separator + 1)..])
+                : string.Empty;
+        }
+
+        return null;
+    }
+
+    private static HardwareEncoder? DetectHardwareEncoder()
+    {
+        foreach (var candidate in new[]
+                 {
+                     new HardwareEncoder("h264_nvenc", "nv12"),
+                     new HardwareEncoder("h264_amf", "nv12")
+                 })
+        {
+            if (CanUseHardwareEncoder(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool CanUseHardwareEncoder(HardwareEncoder encoder)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = FfmpegLocator.GetRequiredBundledFfmpegPath(),
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        foreach (var argument in new[]
+                 {
+                     "-hide_banner",
+                     "-loglevel", "error",
+                     "-f", "lavfi",
+                     "-i", "color=c=black:s=320x180:r=1",
+                     "-frames:v", "1",
+                     "-an",
+                     "-c:v", encoder.Codec
+                 })
+        {
+            psi.ArgumentList.Add(argument);
+        }
+
+        if (encoder.Codec == "h264_nvenc")
+        {
+            psi.ArgumentList.Add("-preset");
+            psi.ArgumentList.Add("p1");
+        }
+        else
+        {
+            psi.ArgumentList.Add("-usage");
+            psi.ArgumentList.Add("lowlatency");
+            psi.ArgumentList.Add("-quality");
+            psi.ArgumentList.Add("speed");
+        }
+
+        psi.ArgumentList.Add("-pix_fmt");
+        psi.ArgumentList.Add(encoder.PixelFormat);
+        psi.ArgumentList.Add("-f");
+        psi.ArgumentList.Add("null");
+        psi.ArgumentList.Add("NUL");
+
+        try
+        {
+            using var process = Process.Start(psi);
+            if (process == null)
+            {
+                return false;
+            }
+
+            if (!process.WaitForExit(5000))
+            {
+                KillProcessTree(process);
+                return false;
+            }
+
+            return process.ExitCode == 0;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static (int Width, int Height) ParseVideoSize(string? videoSize)
@@ -304,6 +567,35 @@ public sealed class LiveStreamingService : ILiveStreamingService, IDisposable
 
         return input;
     }
+
+    private static string NormalizeAuthorizationToken(string token)
+    {
+        var value = token.Trim();
+        const string bearerPrefix = "Bearer ";
+        return value.StartsWith(bearerPrefix, StringComparison.OrdinalIgnoreCase)
+            ? value[bearerPrefix.Length..].Trim()
+            : value;
+    }
+
+    private static string GetProtocolDisplayName(LiveStreamOptions options)
+    {
+        if (options.Protocol == LiveStreamProtocol.Rtc)
+        {
+            return TryBuildSrsRtmpUrl(options, out _)
+                ? "RTC (SRS bridge)"
+                : "RTC (WHIP)";
+        }
+
+        return "RTMP";
+    }
+
+    private sealed record HardwareEncoder(string Codec, string PixelFormat);
+
+    private sealed record PushOutput(
+        string Url,
+        string ContainerFormat,
+        bool UsesDirectWhip,
+        bool UsesSrsRtcBridge);
 
     private static void WriteOutput(string? line, Action<string> onOutput)
     {

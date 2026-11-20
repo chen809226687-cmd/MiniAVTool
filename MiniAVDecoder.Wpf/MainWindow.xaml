@@ -5,6 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
         xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         mc:Ignorable="d"
         Title="MiniAV 直播与媒体工具"
         Height="760"
@@ -144,6 +145,8 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="96"/>
@@ -151,16 +154,57 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
 
-                            <TextBlock Text="推流地址" Style="{StaticResource FieldLabelStyle}"/>
+                            <TextBlock Text="推流协议" Style="{StaticResource FieldLabelStyle}"/>
+                            <StackPanel Grid.Column="1"
+                                        Grid.ColumnSpan="2"
+                                        Orientation="Horizontal"
+                                        Margin="0,0,0,8">
+                                <RadioButton Content="RTMP"
+                                             IsChecked="{Binding IsRtmpProtocol}"
+                                             GroupName="StreamProtocol"
+                                             VerticalAlignment="Center"
+                                             Margin="0,0,20,0"/>
+                                <RadioButton Content="RTC (SRS WebRTC)"
+                                             IsChecked="{Binding IsRtcProtocol}"
+                                             GroupName="StreamProtocol"
+                                             VerticalAlignment="Center"
+                                             Margin="0,0,18,0"
+                                             ToolTip="SRS 推流经 RTMP 自动转为 WebRTC；观看需要服务器开放 UDP 8000"/>
+                                <TextBlock Text="{Binding StreamAddressHint}"
+                                           Foreground="#88A5B2"
+                                           FontSize="12"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+
+                            <TextBlock Grid.Row="1"
+                                       Text="{Binding StreamAddressLabel}"
+                                       Style="{StaticResource FieldLabelStyle}"/>
                             <TextBox Grid.Column="1"
+                                     Grid.Row="1"
                                      Grid.ColumnSpan="2"
-                                     Text="{Binding RtmpUrl, UpdateSourceTrigger=PropertyChanged}"
+                                     Text="{Binding StreamUrl, UpdateSourceTrigger=PropertyChanged}"
                                      Height="32"
                                      VerticalContentAlignment="Center"
+                                     ToolTip="{Binding StreamAddressHint}"
                                      Margin="0,0,0,8"/>
 
-                            <TextBlock Grid.Row="1" Text="视频来源" Style="{StaticResource FieldLabelStyle}"/>
-                            <StackPanel Grid.Row="1"
+                            <TextBlock Grid.Row="2"
+                                       Text="RTC Token"
+                                       Style="{StaticResource FieldLabelStyle}"
+                                       Visibility="{Binding IsRtcProtocol, Converter={StaticResource BoolToVisibility}}"/>
+                            <TextBox Grid.Row="2"
+                                     Grid.Column="1"
+                                     Grid.ColumnSpan="2"
+                                     Text="{Binding RtcAuthorizationToken, UpdateSourceTrigger=PropertyChanged}"
+                                     Height="32"
+                                     VerticalContentAlignment="Center"
+                                     materialDesign:HintAssist.Hint="可选：WHIP Bearer Token"
+                                     ToolTip="可选。填写时仅通过 FFmpeg 的 -authorization 参数发送，不写入日志。"
+                                     Visibility="{Binding IsRtcProtocol, Converter={StaticResource BoolToVisibility}}"
+                                     Margin="0,0,0,8"/>
+
+                            <TextBlock Grid.Row="3" Text="视频来源" Style="{StaticResource FieldLabelStyle}"/>
+                            <StackPanel Grid.Row="3"
                                         Grid.Column="1"
                                         Grid.ColumnSpan="2"
                                         Orientation="Horizontal"
@@ -170,7 +214,7 @@
                                              GroupName="VideoSourceMode"
                                              VerticalAlignment="Center"
                                              Margin="0,0,18,0"/>
-                                <RadioButton Content="共享视频模式"
+                                <RadioButton Content="共享主显示器"
                                              IsChecked="{Binding IsSharedVideoMode}"
                                              GroupName="VideoSourceMode"
                                              VerticalAlignment="Center"
@@ -190,14 +234,14 @@
                                         Command="{Binding ListLiveDevicesCommand}"/>
                             </StackPanel>
 
-                            <TextBlock Grid.Row="2" Text="音频来源" Style="{StaticResource FieldLabelStyle}"/>
-                            <CheckBox Grid.Row="2"
+                            <TextBlock Grid.Row="4" Text="音频来源" Style="{StaticResource FieldLabelStyle}"/>
+                            <CheckBox Grid.Row="4"
                                       Grid.Column="1"
                                       Content="推送麦克风声音"
                                       IsChecked="{Binding IncludeAudio}"
                                       VerticalAlignment="Center"
                                       Margin="0,0,12,8"/>
-                            <TextBox Grid.Row="2"
+                            <TextBox Grid.Row="4"
                                      Grid.Column="2"
                                      Text="{Binding AudioDeviceName, UpdateSourceTrigger=PropertyChanged}"
                                      Width="260"
@@ -206,8 +250,8 @@
                                      Margin="0,0,0,8"
                                      ToolTip="麦克风设备名，例如 Microphone Array"/>
 
-                            <TextBlock Grid.Row="3" Text="推流参数" Style="{StaticResource FieldLabelStyle}"/>
-                            <StackPanel Grid.Row="3"
+                            <TextBlock Grid.Row="5" Text="推流参数" Style="{StaticResource FieldLabelStyle}"/>
+                            <StackPanel Grid.Row="5"
                                         Grid.Column="1"
                                         Grid.ColumnSpan="2"
                                         Orientation="Horizontal"
@@ -232,7 +276,7 @@
                                           Margin="0,0,0,8"/>
                             </StackPanel>
 
-                            <StackPanel Grid.Row="4"
+                            <StackPanel Grid.Row="6"
                                         Grid.ColumnSpan="3"
                                         Orientation="Horizontal">
                                 <Button Content="开始直播"
@@ -288,19 +332,51 @@
 
                     <Border x:Name="PlaybackControlPanel" Style="{StaticResource PanelBorderStyle}">
                         <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="96"/>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
 
-                            <TextBlock Text="播放地址" Style="{StaticResource FieldLabelStyle}"/>
-                            <TextBox Grid.Column="1"
+                            <TextBlock Text="播放方式" Style="{StaticResource FieldLabelStyle}"/>
+                            <StackPanel Grid.Column="1"
+                                        Grid.ColumnSpan="2"
+                                        Orientation="Horizontal"
+                                        Margin="0,0,0,8">
+                                <RadioButton Content="RTMP / HTTP-FLV"
+                                             IsChecked="{Binding IsRtmpPlayback}"
+                                             IsEnabled="{Binding CanChangePlaybackProtocol}"
+                                             GroupName="PlaybackMode"
+                                             VerticalAlignment="Center"
+                                             Margin="0,0,20,0"/>
+                                <RadioButton Content="RTC (WebRTC / WHEP)"
+                                             IsChecked="{Binding IsRtcPlayback}"
+                                             IsEnabled="{Binding CanChangePlaybackProtocol}"
+                                             GroupName="PlaybackMode"
+                                             VerticalAlignment="Center"
+                                             Margin="0,0,18,0"/>
+                                <TextBlock Text="{Binding PlaybackUrlHint}"
+                                           Foreground="#88A5B2"
+                                           FontSize="12"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+
+                            <TextBlock Grid.Row="1"
+                                       Text="{Binding PlaybackUrlLabel}"
+                                       Style="{StaticResource FieldLabelStyle}"/>
+                            <TextBox Grid.Row="1"
+                                     Grid.Column="1"
                                      Text="{Binding PlaybackUrl, UpdateSourceTrigger=PropertyChanged}"
                                      Height="32"
                                      VerticalContentAlignment="Center"
+                                     ToolTip="{Binding PlaybackUrlHint}"
                                      Margin="0,0,12,0"/>
-                            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                            <StackPanel Grid.Row="1" Grid.Column="2" Orientation="Horizontal">
                                 <Button Content="开始播放"
                                         Style="{StaticResource PrimaryButtonStyle}"
                                         Command="{Binding StartPlaybackCommand}" Click="Button_Click"/>
@@ -314,6 +390,7 @@
                                           Height="32"
                                           ItemsSource="{Binding LiveScaleModeOptions}"
                                           SelectedItem="{Binding LiveScaleMode, UpdateSourceTrigger=PropertyChanged}"
+                                          IsEnabled="{Binding IsRtmpPlayback}"
                                           VerticalContentAlignment="Center"
                                           Margin="0,0,10,0"/>
                                 <Button Content="全屏"
@@ -324,6 +401,21 @@
                                            VerticalAlignment="Center"
                                            Margin="4,0,0,0"/>
                             </StackPanel>
+
+                            <TextBlock Grid.Row="2"
+                                       Text="RTC Token"
+                                       Style="{StaticResource FieldLabelStyle}"
+                                       Visibility="{Binding IsRtcPlayback, Converter={StaticResource BoolToVisibility}}"/>
+                            <TextBox Grid.Row="2"
+                                     Grid.Column="1"
+                                     Grid.ColumnSpan="2"
+                                     Text="{Binding RtcPlaybackAuthorizationToken, UpdateSourceTrigger=PropertyChanged}"
+                                     Height="32"
+                                     VerticalContentAlignment="Center"
+                                     materialDesign:HintAssist.Hint="可选：WHEP Bearer Token"
+                                     ToolTip="可选。仅在 RTC 播放建立 WHEP 会话时发送。"
+                                     Visibility="{Binding IsRtcPlayback, Converter={StaticResource BoolToVisibility}}"
+                                     Margin="0,8,0,0"/>
                         </Grid>
                     </Border>
 
@@ -334,11 +426,19 @@
                             BorderThickness="1"
                             CornerRadius="6"
                             MouseDown="OnPlaybackVideoMouseDown">
-                        <vlc:VideoView x:Name="LiveVideoView"
-                                       HorizontalAlignment="Stretch"
-                                       VerticalAlignment="Stretch"
-                                       HorizontalContentAlignment="Stretch"
-                                       VerticalContentAlignment="Stretch"/>
+                        <Grid>
+                            <vlc:VideoView x:Name="LiveVideoView"
+                                           HorizontalAlignment="Stretch"
+                                           VerticalAlignment="Stretch"
+                                           HorizontalContentAlignment="Stretch"
+                                           VerticalContentAlignment="Stretch"
+                                           Visibility="{Binding IsRtmpPlayback, Converter={StaticResource BoolToVisibility}}"/>
+                            <wv2:WebView2 x:Name="RtcVideoView"
+                                          HorizontalAlignment="Stretch"
+                                          VerticalAlignment="Stretch"
+                                          DefaultBackgroundColor="Black"
+                                          Visibility="{Binding IsRtcPlayback, Converter={StaticResource BoolToVisibility}}"/>
+                        </Grid>
                     </Border>
 
                     <Border x:Name="PlaybackLogPanel"

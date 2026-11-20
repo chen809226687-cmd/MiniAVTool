@@ -2,8 +2,10 @@ bin
 obj
 .vs
 x64
+.buildcheck
 
 MiniAVTool.CameraVision/build/
 MiniAVTool.CameraVision/install/
 MiniAVTool.CameraVision/captures/
 MiniAVTool.CameraVision/CMakeUserPresets.json
+MiniAVTool.CameraVision/opencv.local.props
